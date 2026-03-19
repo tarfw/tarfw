@@ -1,0 +1,34 @@
+{
+  "name": "taragent",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-03-20",
+  "ai": {
+    "binding": "AI"
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "CONVERSATION_DO",
+        "class_name": "ConversationDO"
+      },
+      {
+        "name": "ORDER_DO",
+        "class_name": "OrderDO"
+      },
+      {
+        "name": "TASK_DO",
+        "class_name": "TaskDO"
+      },
+      {
+        "name": "SESSION_DO",
+        "class_name": "SessionDO"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["ConversationDO", "OrderDO", "TaskDO", "SessionDO"]
+    }
+  ]
+}

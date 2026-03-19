@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Expo and project management
+.expo/
+.vscode/
+
+# Build outputs
+dist/
+web-build/
+
+# Native folders (EAS uses your source code, not these)
+ios/
+android/
+
+# Ignore artifacts directory
+.gemini/
+brain/
+artifacts/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Large logs or temp files
+*.log
+npm-debug.log*

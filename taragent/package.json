@@ -1,0 +1,20 @@
+{
+  "name": "taragent",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.14.0",
+    "hono": "^4.6.12",
+    "libsql": "^0.5.22",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241127.0",
+    "@types/node": "^22.10.1",
+    "typescript": "^5.7.2",
+    "wrangler": "^4.74.0"
+  }
+}
