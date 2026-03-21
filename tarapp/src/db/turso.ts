@@ -1,9 +1,28 @@
 import { connect, Database } from '@tursodatabase/sync-react-native';
+import { createStateApi, updateStateApi, deleteStateApi } from '../api/client';
 
 const dbUrl = 'libsql://taragent-tarframework.aws-eu-west-1.turso.io';
-const dbToken = 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NzM3NDE3NzUsImlkIjoiMDE5Y2ZiM2YtMzkwMS03NTBkLTlkNmQtODZhMWU0MGU0ZThhIiwicmlkIjoiMjZkODVjMGQtNDM4OC00ZTlkLTk1ZjYtNzNkNzdmMGM5NDQ4In0.Uj72uqB8_mWlQokEVaZpVsCjGKgD91wBoKamcBIATuUSzMuD2R2ZzxTq7elTHfMeuBCGzFv1xzc0VWXqzAF9CA';
+// Read-only token — all writes go through taragent API
+const dbToken = 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicm8iLCJpYXQiOjE3NzM5NTg3NDEsImlkIjoiMDE5Y2ZiM2YtMzkwMS03NTBkLTlkNmQtODZhMWU0MGU0ZThhIiwicmlkIjoiMjZkODVjMGQtNDM4OC00ZTlkLTk1ZjYtNzNkNzdmMGM5NDQ4In0.YQeAm5rYX8U-nOO9RulJ3QYMVvqp5nSaIljA1boxVW6yO1EaIjpEQBgkhnfp4oW8UMFUExWR93iD_7pgtbGwCw';
 
 let dbHandle: Database | null = null;
+let embeddingsTableReady = false;
+
+async function ensureEmbeddingsTable(db: Database) {
+  if (embeddingsTableReady) return;
+  try {
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS stateai (
+        state_id TEXT PRIMARY KEY,
+        embedding F32_BLOB(384),
+        FOREIGN KEY (state_id) REFERENCES state(id)
+      )
+    `);
+    embeddingsTableReady = true;
+  } catch (e: any) {
+    console.warn('Failed to create stateai table:', e);
+  }
+}
 
 export async function getDb(): Promise<Database> {
   if (!dbHandle) {
@@ -18,6 +37,7 @@ export async function getDb(): Promise<Database> {
     } catch (e: any) {
       console.warn('Initial Turso pull failed:', e);
     }
+    await ensureEmbeddingsTable(dbHandle);
   }
   return dbHandle;
 }
@@ -27,13 +47,10 @@ export async function pullData() {
   await db.pull();
 }
 
-export async function pushData() {
-  const db = await getDb();
-  await db.push();
-}
-
 /**
- * State CRUD operations using the local DB.
+ * State CRUD operations.
+ * Reads come from the local replica (pulled from Turso).
+ * Writes go through the taragent API, then we pull to sync locally.
  */
 export async function getAllStates(scope = 'shop:main') {
   const db = await getDb();
@@ -44,38 +61,53 @@ export async function getAllStates(scope = 'shop:main') {
   return rows;
 }
 
-export async function createStateLocal(ucode: string, title: string | undefined, payload: any, scope = 'shop:main', embedding?: number[]) {
+export async function createStateLocal(ucode: string, title: string | undefined, payload: any, scope = 'shop:main') {
+  const result = await createStateApi(ucode, title, payload, scope);
   const db = await getDb();
-  const [type] = ucode.split(':');
-  const id = Math.random().toString(36).substring(2, 11);
-  
-  await db.run(
-    'INSERT INTO state (id, ucode, type, title, payload, scope, embedding) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    id, ucode, type || 'unknown', title || null, JSON.stringify(payload || {}), scope, embedding ? JSON.stringify(embedding) : null
-  );
-  
-  // Try to push changes, but don't block
-  db.push().catch((e: any) => console.error('Push failed after create:', e));
+  await db.pull();
+  // Return the id from the newly pulled state
+  const rows = await db.all('SELECT id FROM state WHERE ucode = ? AND scope = ? LIMIT 1', ucode, scope);
+  return rows.length > 0 ? (rows[0] as any).id : ucode;
 }
 
-export async function updateStateLocal(ucode: string, title: string | undefined, payload: any, scope = 'shop:main', embedding?: number[]) {
+export async function updateStateLocal(ucode: string, title: string | undefined, payload: any, scope = 'shop:main') {
+  await updateStateApi(ucode, title, payload, scope);
   const db = await getDb();
-  await db.run(
-    'UPDATE state SET title = COALESCE(?, title), payload = COALESCE(?, payload), embedding = COALESCE(?, embedding) WHERE ucode = ? AND scope = ?',
-    title || null, payload ? JSON.stringify(payload) : null, embedding ? JSON.stringify(embedding) : null, ucode, scope
-  );
-  
-  db.push().catch((e: any) => console.error('Push failed after update:', e));
+  await db.pull();
 }
 
 export async function deleteStateLocal(ucode: string, scope = 'shop:main') {
+  await deleteStateApi(ucode, scope);
+  const db = await getDb();
+  await db.pull();
+}
+
+export async function upsertEmbedding(stateId: string, vector: number[]) {
   const db = await getDb();
   await db.run(
-    'DELETE FROM state WHERE ucode = ? AND scope = ?',
+    'INSERT OR REPLACE INTO stateai (state_id, embedding) VALUES (?, vector32(?))',
+    stateId, JSON.stringify(vector)
+  );
+}
+
+export async function getStateIdByUcode(ucode: string, scope = 'shop:main'): Promise<string | null> {
+  const db = await getDb();
+  const rows = await db.all(
+    'SELECT id FROM state WHERE ucode = ? AND scope = ? LIMIT 1',
     ucode, scope
   );
-  
-  db.push().catch((e: any) => console.error('Push failed after delete:', e));
+  return rows.length > 0 ? (rows[0] as any).id : null;
+}
+
+export async function getStatesWithoutEmbeddings(scope = 'shop:main') {
+  const db = await getDb();
+  return db.all(
+    `SELECT s.* FROM state s
+     LEFT JOIN stateai e ON s.id = e.state_id
+     WHERE s.scope = ? AND e.state_id IS NULL
+     ORDER BY s.ts DESC`,
+    scope
+  );
 }
 
 function cosineSimilarity(a: number[], b: number[]): number {
@@ -97,31 +129,39 @@ function cosineSimilarity(a: number[], b: number[]): number {
 export async function searchStates(queryVector: number[], scope = 'shop:main', limit = 10) {
   const db = await getDb();
   try {
-    // Try native vector search first
-    // Note: older versions used vector_distance, newer use vector_distance_cos
+    // Native vector search using the dedicated embeddings table
     const rows = await db.all(
-      `SELECT *, vector_distance_cos(embedding, ?) as distance 
-       FROM state 
-       WHERE scope = ? AND embedding IS NOT NULL
-       ORDER BY distance ASC 
+      `SELECT s.*, vector_distance_cos(e.embedding, vector32(?)) as distance
+       FROM state s
+       JOIN stateai e ON s.id = e.state_id
+       WHERE s.scope = ?
+       ORDER BY distance ASC
        LIMIT ?`,
       JSON.stringify(queryVector), scope, limit
     );
     return rows;
   } catch (e) {
     console.warn('Native vector search failed, falling back to JS:', e);
-    // Fallback: Fetch all with embeddings and sort in JS
+    // Fallback: read embeddings from the new table and compute in JS
     const allRows = await db.all(
-      'SELECT * FROM state WHERE scope = ? AND embedding IS NOT NULL',
+      `SELECT s.*, e.embedding as raw_embedding FROM state s
+       JOIN stateai e ON s.id = e.state_id
+       WHERE s.scope = ?`,
       scope
     );
-    
-    const results = allRows.map(row => {
+
+    const results = allRows.map((row: any) => {
       try {
-        if (typeof row.embedding !== 'string') {
+        // raw_embedding may be a Float32Array or binary blob from F32_BLOB
+        // Try to parse if it's a string, otherwise treat as array-like
+        let embedding: number[];
+        if (typeof row.raw_embedding === 'string') {
+          embedding = JSON.parse(row.raw_embedding);
+        } else if (row.raw_embedding && row.raw_embedding.length) {
+          embedding = Array.from(row.raw_embedding);
+        } else {
           return { ...row, distance: 999 };
         }
-        const embedding = JSON.parse(row.embedding);
         return {
           ...row,
           distance: 1 - cosineSimilarity(queryVector, embedding)
@@ -130,8 +170,8 @@ export async function searchStates(queryVector: number[], scope = 'shop:main', l
         return { ...row, distance: 999 };
       }
     });
-    
-    results.sort((a, b) => a.distance - b.distance);
+
+    results.sort((a: any, b: any) => a.distance - b.distance);
     return results.slice(0, limit);
   }
 }

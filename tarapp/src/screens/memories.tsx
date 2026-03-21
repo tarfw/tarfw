@@ -59,34 +59,7 @@ export default function MemoriesScreen() {
     setShowForm(true);
   };
 
-  const handleEdit = (item: any) => {
-    const typeKey = item.ucode?.split(":")[0];
-    const typeDef = getStateType(typeKey);
-    if (!typeDef) {
-      Alert.alert("Unknown type", `Cannot edit type: ${typeKey}`);
-      return;
-    }
-    setSelectedType(typeDef);
-    setEditingState({
-      ...item,
-      payload:
-        typeof item.payload === "string"
-          ? JSON.parse(item.payload)
-          : item.payload,
-    });
-    setShowForm(true);
-  };
 
-  const handleDelete = (ucode: string) => {
-    Alert.alert("Delete Memory", `Delete "${ucode}"?`, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: () => deleteState(ucode),
-      },
-    ]);
-  };
 
   const handleSubmit = async (
     ucode: string,
@@ -100,15 +73,24 @@ export default function MemoriesScreen() {
     }
   };
 
-  const handleSearch = async (text: string) => {
+  const searchTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleSearch = (text: string) => {
     setSearchQuery(text);
+    
+    if (searchTimerRef.current) {
+      clearTimeout(searchTimerRef.current);
+    }
+
     if (!text) {
       loadStates();
       return;
     }
+
     if (isSemanticSearch) {
-      // Trigger semantic search
-      search(text);
+      searchTimerRef.current = setTimeout(() => {
+        search(text);
+      }, 300);
     }
   };
 
@@ -261,25 +243,22 @@ export default function MemoriesScreen() {
               <Text style={styles.typeTagText}>{typeKey}</Text>
             </View>
           )}
-          <View style={styles.cardActions}>
-            <TouchableOpacity
-              onPress={() => handleEdit({ ...item, ucode })}
-              style={styles.actionBtn}
-            >
-              <Ionicons name="pencil-outline" size={17} color="#007AFF" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => handleDelete(ucode)}
-              style={styles.actionBtn}
-            >
-              <Ionicons name="trash-outline" size={17} color="#FF3B30" />
-            </TouchableOpacity>
-          </View>
+
         </View>
 
-        {/* Title */}
-        <Text style={styles.cardTitle}>{item.title || "—"}</Text>
-        <Text style={styles.cardUcode}>{ucode}</Text>
+        {/* Title & Distance */}
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.cardTitle}>{item.title || "—"}</Text>
+            <Text style={styles.cardUcode}>{ucode}</Text>
+          </View>
+          {isSemanticSearch && typeof item.distance === 'number' && (
+            <View style={styles.distanceBadge}>
+              <Ionicons name="git-branch-outline" size={10} color="#007AFF" />
+              <Text style={styles.distanceText}>{item.distance.toFixed(3)}</Text>
+            </View>
+          )}
+        </View>
 
         {/* Key payload fields preview */}
         {Object.keys(parsedPayload).length > 0 && (
@@ -593,8 +572,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#EDEDF0",
   },
   typeTagText: { fontSize: 12, fontWeight: "600", color: "#636366" },
-  cardActions: { flexDirection: "row", gap: 16 },
-  actionBtn: { padding: 2 },
+
   cardTitle: {
     fontSize: 17,
     fontWeight: "700",
@@ -602,6 +580,23 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   cardUcode: { fontSize: 12, color: "#AEAEB2", marginBottom: 10 },
+  distanceBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#007AFF10',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#007AFF20'
+  },
+  distanceText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#007AFF',
+    fontFamily: 'monospace'
+  },
 
   payloadRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   payloadChip: {

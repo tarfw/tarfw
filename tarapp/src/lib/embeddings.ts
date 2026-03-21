@@ -1,6 +1,7 @@
-import { TextEmbeddingsModule, ALL_MINILM_L6_V2 } from 'react-native-executorch';
+import { TextEmbeddingsModule } from 'react-native-executorch';
 
 const MODEL_ASSET = require('../../assets/models/all-MiniLM-L6-v2_xnnpack.pte');
+const TOKENIZER_ASSET = require('../../assets/models/tokenizer.json');
 
 let embeddingsInstance: TextEmbeddingsModule | null = null;
 
@@ -9,17 +10,30 @@ export async function getEmbeddings() {
     const instance = new TextEmbeddingsModule();
     await instance.load({
       modelSource: MODEL_ASSET,
-      tokenizerSource: ALL_MINILM_L6_V2.tokenizerSource,
+      tokenizerSource: TOKENIZER_ASSET,
     });
     embeddingsInstance = instance;
   }
   return embeddingsInstance;
 }
 
+let inferenceLock = Promise.resolve();
+
 export async function generateEmbedding(text: string): Promise<number[]> {
   const engine = await getEmbeddings();
-  const vector = await engine.forward(text);
-  return Array.from(vector);
+  
+  // Use a simple promise chain as a lock to ensure sequential execution
+  const currentLock = inferenceLock;
+  let release: () => void;
+  inferenceLock = new Promise((resolve) => { release = resolve; });
+  
+  try {
+    await currentLock;
+    const vector = await engine.forward(text);
+    return Array.from(vector);
+  } finally {
+    release!();
+  }
 }
 
 export async function generateEmbeddings(texts: string[]): Promise<number[][]> {

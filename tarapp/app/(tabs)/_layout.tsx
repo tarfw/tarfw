@@ -13,8 +13,8 @@ export default function TabLayout() {
         }}
       >
         <Tabs.Screen name="index" options={{ title: 'Trace' }} />
-        <Tabs.Screen name="agents" options={{ title: 'Agents' }} />
         <Tabs.Screen name="memories" options={{ title: 'Memories' }} />
+        <Tabs.Screen name="agents" options={{ title: 'Agents' }} />
         <Tabs.Screen name="relay" options={{ title: 'Relay' }} />
       </Tabs>
     </AgentProvider>

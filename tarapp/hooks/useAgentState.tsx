@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
-import { createStateLocal, updateStateLocal, deleteStateLocal, getAllStates, pullData, searchStates } from "../src/db/turso";
+import { createStateLocal, updateStateLocal, deleteStateLocal, getAllStates, pullData, searchStates, upsertEmbedding, getStateIdByUcode, getStatesWithoutEmbeddings } from "../src/db/turso";
 import { generateEmbedding } from "../src/lib/embeddings";
 
 type AgentState = {
@@ -31,9 +31,11 @@ const SCOPE = "shop:main";
 export function AgentProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
+  const searchCounterRef = React.useRef(0);
 
   const loadStates = async () => {
     setLoading(true);
+    searchCounterRef.current++; // Invalidate any pending searches
     try {
       // Sync first
       await pullData();
@@ -64,14 +66,14 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   const createState = async (ucode: string, title: string, payload: any) => {
     setLoading(true);
     try {
-      let embedding: number[] | undefined;
+      const id = await createStateLocal(ucode, title, payload, SCOPE);
       try {
         const textToEmbed = `${title} ${JSON.stringify(payload)}`.substring(0, 1000);
-        embedding = await generateEmbedding(textToEmbed);
+        const vector = await generateEmbedding(textToEmbed);
+        await upsertEmbedding(id, vector);
       } catch (e) {
         console.warn('Embedding generation failed during create:', e);
       }
-      await createStateLocal(ucode, title, payload, SCOPE, embedding);
       await loadStates();
     } finally {
       setLoading(false);
@@ -81,14 +83,17 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   const updateState = async (ucode: string, title: string, payload: any) => {
     setLoading(true);
     try {
-      let embedding: number[] | undefined;
+      await updateStateLocal(ucode, title, payload, SCOPE);
       try {
-        const textToEmbed = `${title} ${JSON.stringify(payload)}`.substring(0, 1000);
-        embedding = await generateEmbedding(textToEmbed);
+        const stateId = await getStateIdByUcode(ucode, SCOPE);
+        if (stateId) {
+          const textToEmbed = `${title} ${JSON.stringify(payload)}`.substring(0, 1000);
+          const vector = await generateEmbedding(textToEmbed);
+          await upsertEmbedding(stateId, vector);
+        }
       } catch (e) {
         console.warn('Embedding generation failed during update:', e);
       }
-      await updateStateLocal(ucode, title, payload, SCOPE, embedding);
       await loadStates();
     } finally {
       setLoading(false);
@@ -107,27 +112,23 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
 
   const reindexMissingEmbeddings = async () => {
     try {
-      const states = await getAllStates(SCOPE);
-      const missing = states.filter((s: any) => !s.embedding);
-      
+      const missing = await getStatesWithoutEmbeddings(SCOPE);
+
       if (missing.length === 0) return;
-      
+
       console.log(`Re-indexing ${missing.length} missing embeddings...`);
-      // We process in a loop with small delays to avoid hanging the UI
-      for (const item of missing) {
+      for (const item of missing as any[]) {
         try {
-          // Give the UI a chance to breathe between intensive AI tasks
           await new Promise(resolve => setTimeout(resolve, 500));
-          
-          const payloadObj = (item.payload && typeof item.payload === 'string') 
-            ? JSON.parse(item.payload) 
+
+          const payloadObj = (item.payload && typeof item.payload === 'string')
+            ? JSON.parse(item.payload)
             : (item.payload || {});
-          
+
           const textToEmbed = `${item.title || ''} ${JSON.stringify(payloadObj)}`.substring(0, 1000);
           const vector = await generateEmbedding(textToEmbed);
-          const ucode = item.ucode || item.streamid;
-          if (ucode) {
-            await updateStateLocal(ucode as string, item.title as string | undefined, payloadObj, SCOPE, vector);
+          if (item.id) {
+            await upsertEmbedding(item.id, vector);
           }
         } catch (err) {
           console.warn(`Failed to re-index ${item.ucode}:`, err);
@@ -139,15 +140,30 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   };
 
   const search = async (query: string) => {
+    const trimmedQuery = query.trim();
+    const currentSearchId = ++searchCounterRef.current;
+    
+    if (!trimmedQuery) {
+      return;
+    }
+
     setLoading(true);
     try {
-      const vector = await generateEmbedding(query);
-      const results = await searchStates(vector, SCOPE);
-      setResult({ result: results });
+      const vector = await generateEmbedding(trimmedQuery);
+      
+      // Only update result if this is still the latest search
+      if (currentSearchId === searchCounterRef.current) {
+        const results = await searchStates(vector, SCOPE);
+        setResult({ result: results });
+      }
     } catch (e) {
-      console.error('Semantic search failed:', e);
+      if (currentSearchId === searchCounterRef.current) {
+        console.error('Semantic search failed:', e);
+      }
     } finally {
-      setLoading(false);
+      if (currentSearchId === searchCounterRef.current) {
+        setLoading(false);
+      }
     }
   };
 

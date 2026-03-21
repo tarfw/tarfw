@@ -47,6 +47,13 @@ CREATE TABLE IF NOT EXISTS trace (
   scope TEXT
 );
 
+-- 4. stateai (vector search)
+CREATE TABLE IF NOT EXISTS stateai (
+  state_id TEXT PRIMARY KEY,
+  embedding F32_BLOB(384),
+  FOREIGN KEY (state_id) REFERENCES state(id)
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_trace_stream_ts ON trace(streamid, ts);
 CREATE INDEX IF NOT EXISTS idx_trace_scope ON trace(scope);
