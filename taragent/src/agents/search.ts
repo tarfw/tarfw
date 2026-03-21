@@ -5,38 +5,26 @@ export class SearchAgent {
   private env: any;
 
   constructor(db: Client, env: any) {
+    // This agent uses the States DB for semantic search
+    // Embeddings come from mobile app (local MiniLM) stored in stateai table
     this.db = db;
     this.env = env;
   }
 
   async processSearch(query: string, scope: string) {
-    if (!this.env.AI) {
-      throw new Error("AI binding is missing. Cannot perform semantic search.");
-    }
-
-    console.log(`Searching for "${query}" in scope ${scope}`);
+    // Note: Search is now handled entirely on mobile app where embeddings are generated locally
+    // This endpoint exists for server-side search if needed (e.g., from web clients)
+    // For now, we'll return a message indicating search should be done on mobile
     
-    // 1. Embed the query
-    const embedResp = await this.env.AI.run('@cf/baai/bge-base-en-v1.5', { text: [query] });
-    const vec = embedResp.data[0];
-    const floatArray = Array.from(vec);
-    const embeddingStr = `[${floatArray.join(',')}]`;
-
-    // 2. Perform vector search in Turso
-    // vector_distance_cos returns similarity distance (lower is closer matching)
-    const result = await this.db.execute({
-      sql: `SELECT ucode, title, payload, vector_distance_cos(embedding, vector(?)) as distance
-            FROM state 
-            WHERE scope = ? AND embedding IS NOT NULL
-            ORDER BY distance ASC
-            LIMIT 5`,
-      args: [embeddingStr, scope]
-    });
-
+    console.log(`Search request for "${query}" in scope ${scope} - delegated to mobile`);
+    
+    // If we need server-side search, we'd need the query vector passed in
+    // For now, return instructions for mobile-based search
     return {
       action: "SEARCH",
       query,
-      results: result.rows
+      results: [],
+      message: "Semantic search should be performed on mobile app where local embeddings are available"
     };
   }
 }

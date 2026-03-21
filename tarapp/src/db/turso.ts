@@ -1,12 +1,21 @@
 import { connect, Database } from '@tursodatabase/sync-react-native';
-import { createStateApi, updateStateApi, deleteStateApi } from '../api/client';
+import { createStateApi, updateStateApi, deleteStateApi, upsertEmbeddingApi } from '../api/client';
 
-const dbUrl = 'libsql://taragent-tarframework.aws-eu-west-1.turso.io';
-// Read-only token — all writes go through taragent API
-const dbToken = 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicm8iLCJpYXQiOjE3NzM5NTg3NDEsImlkIjoiMDE5Y2ZiM2YtMzkwMS03NTBkLTlkNmQtODZhMWU0MGU0ZThhIiwicmlkIjoiMjZkODVjMGQtNDM4OC00ZTlkLTk1ZjYtNzNkNzdmMGM5NDQ4In0.YQeAm5rYX8U-nOO9RulJ3QYMVvqp5nSaIljA1boxVW6yO1EaIjpEQBgkhnfp4oW8UMFUExWR93iD_7pgtbGwCw';
+// ─── Two Database Connections ───
 
-let dbHandle: Database | null = null;
+// States DB: state + stateai (long-term memory with vector embeddings)
+const statesDbUrl = 'libsql://states-tarframework.aws-eu-west-1.turso.io';
+const statesDbToken = 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NzQwNzk5NzQsImlkIjoiMDE5ZDBmNTYtNDAwMS03YWExLThkNWQtOGY1YzkyZGFlMDc2IiwicmlkIjoiZDNmZjRhN2MtOThkZi00OTg3LWJjYjUtMjRlNGEwYTI3OWE1In0.HuH6t-vXlSuvnexhyqU-bEZffYQEPp8bITBD0hzi4Kcmb53XqvzBZUtz8QCjVO9HyOzB9ujnbDtB_maJN8-DAw';
+
+// Instances DB: instance + trace (high-frequency working state & event ledger)
+const instancesDbUrl = 'libsql://instances-tarframework.aws-eu-west-1.turso.io';
+const instancesDbToken = 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NzQwODAwODQsImlkIjoiMDE5ZDBmNTYtYTEwMS03OWE2LWJhYWMtY2Y4YjFiNGJjNDE3IiwicmlkIjoiMmNkM2U4OGItNGU0ZS00NTgzLWI1OGMtYzVjZGIzYjI3NzAyIn0.iUK00KHv6W3nnkJl3B3ELSI_62npG9T0U5wOSebthek2CNc-7wy7qPk4W40I_aBs20RWtBKOdG3s4zURnDQDCA';
+
+// Database handles
+let statesDbHandle: Database | null = null;
+let instancesDbHandle: Database | null = null;
 let embeddingsTableReady = false;
+let instancesTablesReady = false;
 
 async function ensureEmbeddingsTable(db: Database) {
   if (embeddingsTableReady) return;
@@ -24,27 +33,105 @@ async function ensureEmbeddingsTable(db: Database) {
   }
 }
 
-export async function getDb(): Promise<Database> {
-  if (!dbHandle) {
-    dbHandle = await connect({
-      path: 'taragent.db',
-      url: dbUrl,
-      authToken: dbToken,
-    });
-    // Optional: initial pull to get remote data
-    try {
-      await dbHandle.pull();
-    } catch (e: any) {
-      console.warn('Initial Turso pull failed:', e);
-    }
-    await ensureEmbeddingsTable(dbHandle);
+async function ensureInstancesTables(db: Database) {
+  if (instancesTablesReady) return;
+  try {
+    // instance table
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS instance (
+        id TEXT PRIMARY KEY,
+        stateid TEXT NOT NULL,
+        type TEXT,
+        scope TEXT,
+        qty REAL,
+        value REAL,
+        currency TEXT,
+        available INTEGER,
+        lat REAL,
+        lng REAL,
+        h3 TEXT,
+        startts TEXT,
+        endts TEXT,
+        ts TEXT,
+        payload TEXT
+      )
+    `);
+    // trace table
+    await db.run(`
+      CREATE TABLE IF NOT EXISTS trace (
+        id TEXT PRIMARY KEY,
+        streamid TEXT NOT NULL,
+        opcode INTEGER NOT NULL,
+        status TEXT,
+        delta REAL,
+        lat REAL,
+        lng REAL,
+        payload TEXT,
+        ts TEXT,
+        scope TEXT
+      )
+    `);
+    instancesTablesReady = true;
+  } catch (e: any) {
+    console.warn('Failed to create instance/trace tables:', e);
   }
-  return dbHandle;
 }
 
-export async function pullData() {
-  const db = await getDb();
+// ─── States DB (state + stateai) ───
+export async function getStatesDb(): Promise<Database> {
+  if (!statesDbHandle) {
+    statesDbHandle = await connect({
+      path: 'states.db',
+      url: statesDbUrl,
+      authToken: statesDbToken,
+    });
+    try {
+      await statesDbHandle.pull();
+    } catch (e: any) {
+      console.warn('States DB pull failed:', e);
+    }
+    await ensureEmbeddingsTable(statesDbHandle);
+  }
+  return statesDbHandle;
+}
+
+// ─── Instances DB (instance + trace) ───
+export async function getInstancesDb(): Promise<Database> {
+  if (!instancesDbHandle) {
+    instancesDbHandle = await connect({
+      path: 'instances.db',
+      url: instancesDbUrl,
+      authToken: instancesDbToken,
+    });
+    try {
+      await instancesDbHandle.pull();
+    } catch (e: any) {
+      console.warn('Instances DB pull failed:', e);
+    }
+    await ensureInstancesTables(instancesDbHandle);
+  }
+  return instancesDbHandle;
+}
+
+// Legacy alias
+export async function getDb(): Promise<Database> {
+  return getStatesDb();
+}
+
+// ─── Pull functions for both DBs ───
+export async function pullStatesData() {
+  const db = await getStatesDb();
   await db.pull();
+}
+
+export async function pullInstancesData() {
+  const db = await getInstancesDb();
+  await db.pull();
+}
+
+// Legacy alias
+export async function pullData() {
+  await pullStatesData();
 }
 
 /**
@@ -83,11 +170,19 @@ export async function deleteStateLocal(ucode: string, scope = 'shop:main') {
 }
 
 export async function upsertEmbedding(stateId: string, vector: number[]) {
-  const db = await getDb();
+  // Store locally for fast offline search
+  const db = await getStatesDb();
   await db.run(
     'INSERT OR REPLACE INTO stateai (state_id, embedding) VALUES (?, vector32(?))',
     stateId, JSON.stringify(vector)
   );
+  
+  // Also sync to remote DB so other clients can search
+  try {
+    await upsertEmbeddingApi(stateId, vector);
+  } catch (e) {
+    console.warn('Failed to sync embedding to remote:', e);
+  }
 }
 
 export async function getStateIdByUcode(ucode: string, scope = 'shop:main'): Promise<string | null> {

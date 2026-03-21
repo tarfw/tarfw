@@ -1,6 +1,8 @@
 export const API_BASE_URL = "https://taragent.wetarteam.workers.dev";
 export const CHANNEL_URL = `${API_BASE_URL}/api/channel`;
 export const STATE_URL = `${API_BASE_URL}/api/state`;
+export const STATEAI_URL = `${API_BASE_URL}/api/stateai`;
+export const SEARCH_URL = `${API_BASE_URL}/api/search`;
 
 // ─── Channel API (natural language + search only) ───
 
@@ -56,5 +58,29 @@ export async function readStateApi(ucode: string, scope = "shop:main") {
     `${STATE_URL}/${encodeURIComponent(ucode)}?scope=${encodeURIComponent(scope)}`
   );
   if (!response.ok) throw new Error(`State READ Error: ${response.status}`);
+  return response.json();
+}
+
+// ─── Embedding API (mobile sends local embeddings to remote) ───
+
+export async function upsertEmbeddingApi(stateId: string, vector: number[]) {
+  const response = await fetch(STATEAI_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ stateId, vector }),
+  });
+  if (!response.ok) throw new Error(`Embedding UPSERT Error: ${response.status}`);
+  return response.json();
+}
+
+// ─── Server-side Search API (optional - mobile can also search locally) ───
+
+export async function searchServerApi(vector: number[], scope = "shop:main", limit = 10) {
+  const response = await fetch(SEARCH_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ vector, scope, limit }),
+  });
+  if (!response.ok) throw new Error(`Search Error: ${response.status}`);
   return response.json();
 }

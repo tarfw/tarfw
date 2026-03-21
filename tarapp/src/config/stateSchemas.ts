@@ -24,8 +24,7 @@ export const STATE_TYPES: StateTypeDef[] = [
     color: '#007AFF',
     fields: [
       { key: 'price', label: 'Price', type: 'number', placeholder: '0.00', required: true },
-      { key: 'currency', label: 'Currency', type: 'text', placeholder: 'USD' },
-      { key: 'stock', label: 'Stock Qty', type: 'number', placeholder: '0' },
+      { key: 'currency', label: 'Currency', type: 'text', placeholder: 'INR' },
       { key: 'brand', label: 'Brand', type: 'text', placeholder: 'Brand name' },
       { key: 'sku', label: 'SKU', type: 'text', placeholder: 'SKU-001' },
       { key: 'sizes', label: 'Sizes', type: 'tags', placeholder: 'S, M, L, XL' },

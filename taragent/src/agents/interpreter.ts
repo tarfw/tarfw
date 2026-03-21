@@ -94,9 +94,11 @@ export const OPCODE_NAMES: Record<number, string> = {
 
 export class InterpreterAgent {
   private db: Client;
-  private env: any; // The worker environment including AI bindings
+  private env: any;
 
   constructor(db: Client, env: any) {
+    // This agent uses the Instances DB (instance + trace tables)
+    // It does NOT handle state CRUD - that's done via states DB
     this.db = db;
     this.env = env;
   }
@@ -184,56 +186,14 @@ export class InterpreterAgent {
     const [type] = ucode.split(":");
     let opcode = 100; // Base Opcode for State Management
 
-    // Generate Embedding if applicable
-    let embeddingStr = null;
-    if (
-      (action === "CREATE" || action === "UPDATE") &&
-      this.env.AI &&
-      (data.title || data.payload)
-    ) {
-      const textToEmbed =
-        `${data.title || ""} ${JSON.stringify(data.payload || {})}`.trim();
-      try {
-        const embedResp = await this.env.AI.run("@cf/baai/bge-base-en-v1.5", {
-          text: [textToEmbed],
-        });
-        const vec = embedResp.data[0];
-        const floatArray = Array.from(vec);
-        embeddingStr = `[${floatArray.join(",")}]`;
-      } catch (e) {
-        console.warn("Embedding generation failed", e);
-      }
-    }
+    // Note: Embeddings are now generated locally on mobile app
+    // This agent handles trace/instance only (high-frequency events)
 
     if (action === "CREATE") {
-      opcode = 101; // Map CREATE to Stock IN / Init
-      const id = crypto.randomUUID();
-      if (embeddingStr) {
-        await this.db.execute({
-          sql: "INSERT INTO state (id, ucode, type, title, payload, scope, embedding) VALUES (?, ?, ?, ?, ?, ?, vector(?))",
-          args: [
-            id,
-            ucode,
-            type || "unknown",
-            data.title || null,
-            JSON.stringify(data.payload || {}),
-            scope,
-            embeddingStr,
-          ],
-        });
-      } else {
-        await this.db.execute({
-          sql: "INSERT INTO state (id, ucode, type, title, payload, scope) VALUES (?, ?, ?, ?, ?, ?)",
-          args: [
-            id,
-            ucode,
-            type || "unknown",
-            data.title || null,
-            JSON.stringify(data.payload || {}),
-            scope,
-          ],
-        });
-      }
+      opcode = 101;
+      // Interpreter doesn't write to state - that's done via API to states DB
+      // This path is for trace/instance updates only
+      console.log(`Interpreter: CREATE for ${ucode} - state handled by mobile API`);
       return {
         opcode: 101,
         delta: data.delta || 0,
@@ -244,29 +204,9 @@ export class InterpreterAgent {
         status: "done",
       } as any;
     } else if (action === "UPDATE") {
-      opcode = 110; // Generic Update Opcode
-      if (embeddingStr) {
-        await this.db.execute({
-          sql: "UPDATE state SET title = COALESCE(?, title), payload = COALESCE(?, payload), embedding = vector(?) WHERE ucode = ? AND scope = ?",
-          args: [
-            data.title || null,
-            data.payload ? JSON.stringify(data.payload) : null,
-            embeddingStr,
-            ucode,
-            scope,
-          ],
-        });
-      } else {
-        await this.db.execute({
-          sql: "UPDATE state SET title = COALESCE(?, title), payload = COALESCE(?, payload) WHERE ucode = ? AND scope = ?",
-          args: [
-            data.title || null,
-            data.payload ? JSON.stringify(data.payload) : null,
-            ucode,
-            scope,
-          ],
-        });
-      }
+      opcode = 110;
+      // Interpreter doesn't write to state
+      console.log(`Interpreter: UPDATE for ${ucode} - state handled by mobile API`);
       return {
         opcode: 110,
         delta: data.delta || 0,
@@ -277,26 +217,19 @@ export class InterpreterAgent {
         status: "done",
       } as any;
     } else if (action === "DELETE") {
-      opcode = 199; // Delete Opcode
-      await this.db.execute({
-        sql: "DELETE FROM state WHERE ucode = ? AND scope = ?",
-        args: [ucode, scope],
-      });
+      opcode = 199;
+      // Interpreter doesn't delete state
+      console.log(`Interpreter: DELETE for ${ucode} - state handled by mobile API`);
     } else if (action === "READ") {
-      opcode = 100; // Read/Status Opcode
-      const result = await this.db.execute({
-        sql: "SELECT * FROM state WHERE ucode = ? AND scope = ?",
-        args: [ucode, scope],
-      });
-      if (result.rows.length === 0)
-        throw new Error(`State ${ucode} not found in scope ${scope}`);
-
+      opcode = 100;
+      // Interpreter doesn't read from state - that's handled by mobile API
+      // Return a placeholder - actual state read comes from mobile
       return {
         opcode,
         delta: 0,
         streamid: ucode,
         status: "done",
-        payload: result.rows[0] as any,
+        payload: { note: "State read handled by mobile API" },
       } as any;
     }
 
@@ -580,51 +513,23 @@ User Text: "${text}"`;
 
   /**
    * Updates the projected state (instance table) based on the event
+   * Note: State is managed by mobile in the states DB - this only tracks instance projections
    */
   private async updateInstance(data: OpcodeResult, scope: string) {
-    // 1. Resolve or Create the State entity (ucode)
+    // Use ucode directly as reference - state is managed separately in states DB
+    // Instance projection is independent of state table
     const ucode = data.streamid;
-
-    // Check if state already exists
-    const stateResult = await this.db.execute({
-      sql: "SELECT id FROM state WHERE ucode = ?",
-      args: [ucode],
-    });
-
-    let stateId: string;
-
-    if (stateResult.rows.length > 0) {
-      stateId = stateResult.rows[0].id as string;
-    } else {
-      // Auto-provision basic state if it doesn't exist
-      stateId = crypto.randomUUID();
-      const [type] = ucode.split(":");
-      await this.db.execute({
-        sql: "INSERT INTO state (id, ucode, type, scope) VALUES (?, ?, ?, ?)",
-        args: [stateId, ucode, type || "unknown", scope],
-      });
-      console.log(`Auto-provisioned state record for ${ucode}`);
-    }
-
-    // 2. Update the Instance
     const instanceId = crypto.randomUUID();
 
-    // We use streamid as a unique part of the instance ID if we want to update existing projections,
-    // or we can search for an existing instance tied to this stateId and scope.
-    // For this proof of concept, we'll upsert by finding existing record for this stateid+scope
-
+    // Upsert instance based on ucode + scope (use ucode as part of ID for uniqueness)
+    // In production, you'd want a unique constraint on (stateid, scope) or deterministic ID
     await this.db.execute({
-      sql: `INSERT INTO instance (id, stateid, type, scope, qty)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET qty = qty + excluded.qty`,
-      args: [instanceId, stateId, "projection", scope, data.delta],
+      sql: `INSERT INTO instance (id, stateid, type, scope, qty, ts)
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(id) DO UPDATE SET qty = qty + excluded.qty, ts = CURRENT_TIMESTAMP`,
+      args: [instanceId, ucode, "projection", scope, data.delta],
     });
 
-    // Note: To truly 'upsert' an instance for a product in a shop, we should probably have a unique constraint
-    // on (stateid, scope) in the instance table or use a deterministic ID.
-    // Given the current schema doesn't have a unique constraint on (stateid, scope),
-    // 'ON CONFLICT(id)' only works if we use the same ID.
-
-    console.log(`Instance updated for ${data.streamid}.`);
+    console.log(`Instance projected for ${data.streamid} (delta: ${data.delta})`);
   }
 }

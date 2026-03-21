@@ -11,8 +11,9 @@ import {
   Platform,
   Switch,
   Alert,
-  SafeAreaView,
+  ActivityIndicator,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { StateTypeDef, FieldDef } from '../src/config/stateSchemas';
 
@@ -30,6 +31,7 @@ export function StateFormModal({ visible, stateType, existingState, onClose, onS
   const [title, setTitle] = useState('');
   const [fieldValues, setFieldValues] = useState<Record<string, any>>({});
   const [submitting, setSubmitting] = useState(false);
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     if (existingState) {
@@ -131,13 +133,13 @@ export function StateFormModal({ visible, stateType, existingState, onClose, onS
 
   return (
     <Modal animationType="slide" visible={visible} onRequestClose={onClose}>
-      <SafeAreaView style={styles.safe}>
+      <View style={[styles.safe, { backgroundColor: '#FFF' }]}>
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.flex}
         >
           {/* Header */}
-          <View style={styles.header}>
+          <View style={[styles.header, { paddingTop: Math.max(insets.top, 10) }]}>
             <TouchableOpacity onPress={onClose} hitSlop={8}>
               <Text style={styles.cancel}>Cancel</Text>
             </TouchableOpacity>
@@ -192,9 +194,13 @@ export function StateFormModal({ visible, stateType, existingState, onClose, onS
           </ScrollView>
 
           {/* Submit */}
-          <View style={styles.footer}>
+          <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 16) }]}>
             <TouchableOpacity
-              style={[styles.btn, submitting && styles.btnDisabled]}
+              style={[
+                styles.btn,
+                { backgroundColor: stateType.color },
+                submitting && styles.btnDisabled
+              ]}
               onPress={handleSubmit}
               disabled={submitting}
               activeOpacity={0.8}
@@ -205,7 +211,7 @@ export function StateFormModal({ visible, stateType, existingState, onClose, onS
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
-      </SafeAreaView>
+      </View>
     </Modal>
   );
 }
