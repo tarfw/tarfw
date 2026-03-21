@@ -1,8 +1,10 @@
 export const API_BASE_URL = "https://taragent.wetarteam.workers.dev";
 export const CHANNEL_URL = `${API_BASE_URL}/api/channel`;
 export const STATE_URL = `${API_BASE_URL}/api/state`;
+export const STATES_LIST_URL = `${API_BASE_URL}/api/states`;
 export const STATEAI_URL = `${API_BASE_URL}/api/stateai`;
 export const SEARCH_URL = `${API_BASE_URL}/api/search`;
+export const INSTANCE_URL = `${API_BASE_URL}/api/instance`;
 
 // ─── Channel API (natural language + search only) ───
 
@@ -31,6 +33,20 @@ export async function createStateApi(ucode: string, title: string | undefined, p
     body: JSON.stringify({ ucode, title, payload, scope }),
   });
   if (!response.ok) throw new Error(`State CREATE Error: ${response.status}`);
+  return response.json();
+}
+
+// LIST all states - for instance creation flow
+export async function listStatesApi(scope = "shop:main", type?: string, limit = 50) {
+  const params = new URLSearchParams({ scope });
+  if (type) params.set('type', type);
+  params.set('limit', limit.toString());
+  
+  const response = await fetch(`${STATES_LIST_URL}?${params.toString()}`, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+  });
+  if (!response.ok) throw new Error(`States LIST Error: ${response.status}`);
   return response.json();
 }
 
@@ -82,5 +98,60 @@ export async function searchServerApi(vector: number[], scope = "shop:main", lim
     body: JSON.stringify({ vector, scope, limit }),
   });
   if (!response.ok) throw new Error(`Search Error: ${response.status}`);
+  return response.json();
+}
+
+// ─── Instance API (working state under products/services) ───
+
+export interface InstanceData {
+  id?: string; // Optional: pass local ID to ensure consistency
+  stateid: string;
+  type?: string;
+  scope?: string;
+  qty?: number;
+  value?: number;
+  currency?: string;
+  available?: boolean;
+  lat?: number;
+  lng?: number;
+  h3?: string;
+  startts?: string;
+  endts?: string;
+  payload?: Record<string, any>;
+}
+
+export async function createInstanceApi(data: InstanceData) {
+  const response = await fetch(INSTANCE_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) throw new Error(`Instance CREATE Error: ${response.status}`);
+  return response.json();
+}
+
+export async function getInstancesByStateApi(stateid: string, scope = "shop:main") {
+  const response = await fetch(
+    `${INSTANCE_URL}/${encodeURIComponent(stateid)}?scope=${encodeURIComponent(scope)}`
+  );
+  if (!response.ok) throw new Error(`Instance READ Error: ${response.status}`);
+  return response.json();
+}
+
+export async function updateInstanceApi(id: string, data: Partial<InstanceData>) {
+  const response = await fetch(`${INSTANCE_URL}/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) throw new Error(`Instance UPDATE Error: ${response.status}`);
+  return response.json();
+}
+
+export async function deleteInstanceApi(id: string) {
+  const response = await fetch(`${INSTANCE_URL}/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) throw new Error(`Instance DELETE Error: ${response.status}`);
   return response.json();
 }

@@ -5,6 +5,7 @@ let instancesDbClient: Client | null = null;
 
 /**
  * Get the States DB client (state + stateai tables)
+ * Uses HTTP-only mode to avoid sync engine issues with Turso
  */
 export function getStatesDbClient(url: string, authToken: string): Client {
   if (!url || !authToken) {
@@ -22,6 +23,7 @@ export function getStatesDbClient(url: string, authToken: string): Client {
 
 /**
  * Get the Instances DB client (instance + trace tables)
+ * Uses HTTP-only mode to avoid sync engine issues with Turso
  */
 export function getInstancesDbClient(url: string, authToken: string): Client {
   if (!url || !authToken) {
@@ -29,8 +31,10 @@ export function getInstancesDbClient(url: string, authToken: string): Client {
   }
   
   if (!instancesDbClient) {
+    // Force HTTP transport by converting libsql:// to https://
+    const httpUrl = url.replace('libsql://', 'https://');
     instancesDbClient = createClient({
-      url: url,
+      url: httpUrl,
       authToken: authToken,
     });
   }

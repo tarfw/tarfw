@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -12,270 +12,213 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useAgentState } from "@/hooks/useAgentState";
-import { StateTypePickerModal } from "@/components/StateTypePickerModal";
-import { StateFormModal } from "@/components/StateFormModal";
-import {
-  STATE_TYPES,
-  StateTypeDef,
-  getStateType,
-} from "../config/stateSchemas";
+import { InstanceFormModal } from "@/components/InstanceFormModal";
+import { Instance } from "@/src/db/turso";
+import StatesScreen from "./states";
 
 export default function MemoriesScreen() {
   const {
     loading,
-    result,
-    createState,
-    updateState,
-    deleteState,
-    loadStates,
-    search,
+    loadInstances,
+    addInstance,
+    editInstance,
+    removeInstance,
+    fetchStatesFromRemote,
   } = useAgentState();
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [isSemanticSearch, setIsSemanticSearch] = useState(false);
+  // Show states selection screen
+  const [showStatesScreen, setShowStatesScreen] = useState(false);
+  const [selectedStateForInstance, setSelectedStateForInstance] = useState<{ ucode: string; title: string } | null>(null);
 
-  const [showTypePicker, setShowTypePicker] = useState(false);
-  const [showForm, setShowForm] = useState(false);
-  const [selectedType, setSelectedType] = useState<StateTypeDef | null>(null);
-  const [editingState, setEditingState] = useState<any>(null);
-  const [activeTypeFilter, setActiveTypeFilter] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const [allInstances, setAllInstances] = useState<Instance[]>([]);
+  const [instancesLoading, setInstancesLoading] = useState(false);
+
+  // Instance modal state
+  const [showInstanceModal, setShowInstanceModal] = useState(false);
+  const [editingInstance, setEditingInstance] = useState<Instance | null>(null);
+
+  // Load all instances on mount
+  useEffect(() => {
+    loadAllInstances();
+  }, []);
+
+  const loadAllInstances = async () => {
+    console.log('[memories.tsx loadAllInstances] START');
+    setInstancesLoading(true);
+    try {
+      // First get all states, then load instances for each
+      console.log('[memories.tsx loadAllInstances] Fetching states from remote...');
+      const states = await fetchStatesFromRemote();
+      console.log('[memories.tsx loadAllInstances] Got states:', states.length, 'states');
+      
+      const allInst: Instance[] = [];
+      
+      for (const state of states) {
+        console.log('[memories.tsx loadAllInstances] Loading instances for state:', state.ucode);
+        try {
+          const instances = await loadInstances(state.ucode);
+          console.log('[memories.tsx loadAllInstances] Got', instances.length, 'instances for', state.ucode);
+          allInst.push(...instances.map(inst => ({
+            ...inst,
+            _stateTitle: state.title || state.ucode
+          })));
+        } catch (e: any) {
+          console.error('[memories.tsx loadAllInstances] Error loading instances for', state.ucode, ':', e.message);
+        }
+      }
+      console.log('[memories.tsx loadAllInstances] Total instances collected:', allInst.length);
+      setAllInstances(allInst);
+    } catch (e: any) {
+      console.error('[memories.tsx loadAllInstances] Failed to load instances:', e.message, e.stack);
+    } finally {
+      setInstancesLoading(false);
+      console.log('[memories.tsx loadAllInstances] DONE');
+    }
+  };
+
+  const handleAddInstance = () => {
+    // First show states selection screen
+    setSelectedStateForInstance(null);
+    setShowStatesScreen(true);
+  };
+
+  // Handle state selection from StatesScreen
+  const handleStateSelected = (state: { ucode: string; title: string }) => {
+    setSelectedStateForInstance({ ucode: state.ucode, title: state.title });
+    setShowStatesScreen(false);
+    setEditingInstance(null);
+    setShowInstanceModal(true);
+  };
+
+  // Close states screen without selection
+  const handleCloseStatesScreen = () => {
+    setShowStatesScreen(false);
+  };
+
+  const handleEditInstance = (instance: Instance) => {
+    setEditingInstance(instance);
+    setSelectedStateForInstance({ ucode: instance.stateid, title: (instance as any)._stateTitle || '' });
+    setShowInstanceModal(true);
+  };
+
+  const handleInstanceSubmit = async (data: any) => {
+    console.log('[memories.tsx handleInstanceSubmit] START - editingInstance:', !!editingInstance);
+    console.log('[memories.tsx handleInstanceSubmit] data:', JSON.stringify(data));
+    console.log('[memories.tsx handleInstanceSubmit] selectedStateForInstance:', selectedStateForInstance);
+    
+    if (editingInstance) {
+      console.log('[memories.tsx handleInstanceSubmit] Editing existing instance, calling editInstance...');
+      await editInstance(editingInstance.id, data);
+    } else if (data.stateid) {
+      // Use stateid from data (passed from InstanceFormModal where state is selected)
+      console.log('[memories.tsx handleInstanceSubmit] Creating new instance for state:', data.stateid);
+      await addInstance(data);
+    } else {
+      console.log('[memories.tsx handleInstanceSubmit] WARNING: No stateid in data!');
+    }
+    
+    // Refresh all instances
+    console.log('[memories.tsx handleInstanceSubmit] Refreshing all instances...');
+    await loadAllInstances();
+    console.log('[memories.tsx handleInstanceSubmit] DONE');
+  };
+
+  const handleInstanceDelete = async () => {
+    if (editingInstance) {
+      await removeInstance(editingInstance.id);
+      await loadAllInstances();
+    }
+  };
 
   // --- CRUD Handlers ---
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadStates();
+    await loadAllInstances();
     setRefreshing(false);
-  }, [loadStates]);
+  }, []);
 
-  const handlePressAdd = () => {
-    setEditingState(null);
-    setShowTypePicker(true);
-  };
-
-  const handleTypeSelect = (type: StateTypeDef) => {
-    setSelectedType(type);
-    setShowTypePicker(false);
-    setShowForm(true);
-  };
-
-
-
-  const handleSubmit = async (
-    ucode: string,
-    title: string,
-    payload: Record<string, any>,
-  ) => {
-    if (editingState) {
-      await updateState(ucode, title, payload);
-    } else {
-      await createState(ucode, title, payload);
-    }
-  };
-
-  const searchTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handleSearch = (text: string) => {
-    setSearchQuery(text);
-    
-    if (searchTimerRef.current) {
-      clearTimeout(searchTimerRef.current);
-    }
-
-    if (!text) {
-      loadStates();
-      return;
-    }
-
-    if (isSemanticSearch) {
-      searchTimerRef.current = setTimeout(() => {
-        search(text);
-      }, 300);
-    }
-  };
-
-  const toggleSearchMode = () => {
-    const nextMode = !isSemanticSearch;
-    setIsSemanticSearch(nextMode);
-    if (searchQuery) {
-      if (nextMode) {
-        search(searchQuery);
-      } else {
-        // Keyword filter happens automatically via filteredItems
-      }
-    }
-  };
-
-  // --- Derive items list ---
-  let items: any[] = [];
-  if (
-    result?.result?.action === "SEARCH" &&
-    Array.isArray(result.result.results)
-  ) {
-    items = result.result.results;
-  } else if (Array.isArray(result?.result)) {
-    items = result.result;
-  } else if (
-    result?.result &&
-    typeof result.result === "object" &&
-    result.result.ucode
-  ) {
-    items = [result.result];
-  }
-
-  const filteredItems = isSemanticSearch
-    ? items // In semantic mode, 'items' are already filtered by the 'search' hook results
-    : items.filter((item) => {
-        const matchesType =
-          !activeTypeFilter ||
-          (item.ucode || item.streamid)?.startsWith(activeTypeFilter + ":");
-        const matchesQuery =
-          !searchQuery ||
-          item.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          item.ucode?.toLowerCase().includes(searchQuery.toLowerCase());
-        return matchesType && matchesQuery;
-      });
+  // Filter instances by search
+  const filteredInstances = allInstances.filter(inst => {
+    if (!searchQuery) return true;
+    const searchLower = searchQuery.toLowerCase();
+    return 
+      inst.stateid?.toLowerCase().includes(searchLower) ||
+      (inst as any)._stateTitle?.toLowerCase().includes(searchLower) ||
+      inst.id?.toLowerCase().includes(searchLower);
+  });
 
   // --- Render ---
-  const renderEmpty = () => (
+  const renderEmpty = (isSearchResult: boolean) => (
     <View style={styles.emptyContainer}>
-      <Ionicons name="albums-outline" size={64} color="#C7C7CC" />
-      <Text style={styles.emptyText}>No memories yet</Text>
+      <Ionicons name="cube-outline" size={64} color="#C7C7CC" />
+      <Text style={styles.emptyText}>{isSearchResult ? 'No matching instances' : 'No instances yet'}</Text>
       <Text style={styles.emptySubText}>
-        Tap + to create your first state — products, brands, campaigns and more.
+        {isSearchResult 
+          ? `No instances found for "${searchQuery}"`
+          : 'Tap + to create your first instance — select a state and add inventory.'}
       </Text>
-      <TouchableOpacity style={styles.emptyButton} onPress={handlePressAdd}>
-        <Ionicons
-          name="add"
-          size={18}
-          color="#FFF"
-          style={{ marginRight: 6 }}
-        />
-        <Text style={styles.emptyButtonText}>Create Memory</Text>
-      </TouchableOpacity>
-    </View>
-  );
-
-  const renderTypeFilters = () => (
-    <View style={styles.tabBarContainer}>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.tabBar}
-      >
-        <TouchableOpacity
-          style={[styles.tab, !activeTypeFilter && styles.tabActive]}
-          onPress={() => setActiveTypeFilter(null)}
-        >
-          <Text
-            style={[styles.tabText, !activeTypeFilter && styles.tabTextActive]}
-          >
-            All
-          </Text>
-          {!activeTypeFilter && <View style={styles.tabIndicator} />}
+      {!isSearchResult && (
+        <TouchableOpacity style={styles.emptyButton} onPress={handleAddInstance}>
+          <Ionicons
+            name="add"
+            size={18}
+            color="#FFF"
+            style={{ marginRight: 6 }}
+          />
+          <Text style={styles.emptyButtonText}>Add Instance</Text>
         </TouchableOpacity>
-        {STATE_TYPES.map((t) => {
-          const isActive = activeTypeFilter === t.type;
-          return (
-            <TouchableOpacity
-              key={t.type}
-              style={[styles.tab, isActive && styles.tabActive]}
-              onPress={() => setActiveTypeFilter(isActive ? null : t.type)}
-            >
-              <Ionicons
-                name={t.icon as any}
-                size={14}
-                color={isActive ? t.color : "#8E8E93"}
-                style={{ marginRight: 5 }}
-              />
-              <Text
-                style={[
-                  styles.tabText,
-                  isActive && { color: t.color, fontWeight: "700" },
-                ]}
-              >
-                {t.label}
-              </Text>
-              {isActive && (
-                <View
-                  style={[styles.tabIndicator, { backgroundColor: t.color }]}
-                />
-              )}
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
+      )}
     </View>
   );
 
-  const renderCard = (item: any, i: number) => {
-    const ucode = item.ucode || item.streamid;
-    const typeKey = ucode?.split(":")[0];
-    const typeDef = getStateType(typeKey);
-    const parsedPayload = item.payload
-      ? typeof item.payload === "string"
-        ? JSON.parse(item.payload)
-        : item.payload
-      : {};
+  // No type filters needed for instances view
 
+  // Render instance card (flat list - no more state hierarchy)
+  const renderInstanceCard = (instance: Instance, i: number) => {
+    const stateTitle = (instance as any)._stateTitle || instance.stateid;
+    
     return (
-      <View key={i} style={styles.card}>
-        {/* Type tag + actions row */}
-        <View style={styles.cardTop}>
-          {typeDef ? (
-            <View
-              style={[
-                styles.typeTag,
-                { backgroundColor: typeDef.color + "18" },
-              ]}
-            >
-              <Ionicons
-                name={typeDef.icon as any}
-                size={13}
-                color={typeDef.color}
-              />
-              <Text style={[styles.typeTagText, { color: typeDef.color }]}>
-                {typeDef.label}
+      <TouchableOpacity 
+        key={i} 
+        style={styles.card}
+        onPress={() => handleEditInstance(instance)}
+        activeOpacity={0.7}
+      >
+        {/* Instance icon */}
+        <View style={styles.instanceIcon}>
+          <Ionicons name="cube" size={20} color="#007AFF" />
+        </View>
+        
+        {/* Instance details */}
+        <View style={styles.instanceDetails}>
+          <Text style={styles.cardTitle}>{stateTitle}</Text>
+          <Text style={styles.cardUcode}>{instance.stateid}</Text>
+          <View style={styles.instanceRow}>
+            {instance.qty !== undefined && instance.qty !== null && (
+              <Text style={styles.instanceQty}>Qty: {instance.qty}</Text>
+            )}
+            {instance.value !== undefined && instance.value !== null && (
+              <Text style={styles.instanceValue}>
+                {instance.currency || 'INR'} {instance.value}
               </Text>
-            </View>
-          ) : (
-            <View style={styles.typeTag}>
-              <Text style={styles.typeTagText}>{typeKey}</Text>
-            </View>
-          )}
-
-        </View>
-
-        {/* Title & Distance */}
-        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.cardTitle}>{item.title || "—"}</Text>
-            <Text style={styles.cardUcode}>{ucode}</Text>
+            )}
           </View>
-          {isSemanticSearch && typeof item.distance === 'number' && (
-            <View style={styles.distanceBadge}>
-              <Ionicons name="git-branch-outline" size={10} color="#007AFF" />
-              <Text style={styles.distanceText}>{item.distance.toFixed(3)}</Text>
-            </View>
-          )}
         </View>
-
-        {/* Key payload fields preview */}
-        {Object.keys(parsedPayload).length > 0 && (
-          <View style={styles.payloadRow}>
-            {Object.entries(parsedPayload)
-              .slice(0, 3)
-              .map(([key, val]) => (
-                <View key={key} style={styles.payloadChip}>
-                  <Text style={styles.payloadChipKey}>{key}</Text>
-                  <Text style={styles.payloadChipVal} numberOfLines={1}>
-                    {String(val)}
-                  </Text>
-                </View>
-              ))}
-          </View>
-        )}
-      </View>
+        
+        {/* Status indicator */}
+        <View style={styles.statusContainer}>
+          <View style={[
+            styles.statusDot, 
+            { backgroundColor: instance.available ? '#34C759' : '#FF3B30' }
+          ]} />
+          <Text style={styles.statusText}>
+            {instance.available ? 'Available' : 'Unavailable'}
+          </Text>
+          <Ionicons name="chevron-forward" size={16} color="#C7C7CC" />
+        </View>
+      </TouchableOpacity>
     );
   };
 
@@ -283,12 +226,12 @@ export default function MemoriesScreen() {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Memories</Text>
+        <Text style={styles.headerTitle}>Instances</Text>
         <View style={{ flexDirection: "row", gap: 12 }}>
           <TouchableOpacity style={styles.addBtn} onPress={onRefresh}>
             <Ionicons name="sync" size={20} color="#000" />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.addBtn} onPress={handlePressAdd}>
+          <TouchableOpacity style={styles.addBtn} onPress={handleAddInstance}>
             <Ionicons name="add" size={24} color="#000" />
           </TouchableOpacity>
         </View>
@@ -305,84 +248,83 @@ export default function MemoriesScreen() {
           />
           <TextInput
             style={styles.searchInput}
-            placeholder={
-              isSemanticSearch ? "Search by meaning..." : "Search memories..."
-            }
+            placeholder="Search instances..."
             value={searchQuery}
-            onChangeText={handleSearch}
+            onChangeText={setSearchQuery}
             placeholderTextColor="#8E8E93"
           />
           {searchQuery ? (
             <TouchableOpacity
-              onPress={() => handleSearch("")}
+              onPress={() => setSearchQuery("")}
               style={{ padding: 8 }}
             >
               <Ionicons name="close-circle" size={18} color="#C7C7CC" />
             </TouchableOpacity>
           ) : null}
         </View>
-        <TouchableOpacity
-          style={[styles.aiToggle, isSemanticSearch && styles.aiToggleActive]}
-          onPress={toggleSearchMode}
-        >
-          <Text
-            style={[
-              styles.aiToggleText,
-              isSemanticSearch && styles.aiToggleTextActive,
-            ]}
-          >
-            AI
-          </Text>
-        </TouchableOpacity>
       </View>
-
-      {/* Type filter chips */}
-      {items.length > 0 && renderTypeFilters()}
 
       {/* Content */}
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
-          filteredItems.length === 0 && { flex: 1 },
+          filteredInstances.length === 0 && { flex: 1 },
         ]}
         keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        {loading && !refreshing && (
+        {(loading || instancesLoading || refreshing) && (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="small" color="#000" />
-            <Text style={styles.loadingText}>Working…</Text>
+            <Text style={styles.loadingText}>Loading instances...</Text>
           </View>
         )}
 
-        {(!loading || refreshing) &&
-          filteredItems.length === 0 &&
-          renderEmpty()}
+        {!loading && !instancesLoading && !refreshing &&
+          filteredInstances.length === 0 &&
+          renderEmpty(!!searchQuery)}
 
-        {filteredItems.length > 0 && (
+        {filteredInstances.length > 0 && (
           <View style={styles.list}>
-            {filteredItems.map((item, i) => renderCard(item, i))}
+            {filteredInstances.map((instance, i) => renderInstanceCard(instance, i))}
           </View>
         )}
       </ScrollView>
 
-      {/* Modals */}
-      <StateTypePickerModal
-        visible={showTypePicker}
-        onClose={() => setShowTypePicker(false)}
-        onSelect={handleTypeSelect}
-      />
-      <StateFormModal
-        visible={showForm}
-        stateType={selectedType}
-        existingState={editingState}
+      {/* States Selection Screen - Full Screen Overlay */}
+      {showStatesScreen && (
+        <View style={styles.overlayContainer}>
+          <StatesScreen
+            onSelectState={handleStateSelected}
+            onClose={handleCloseStatesScreen}
+          />
+        </View>
+      )}
+
+      {/* Instance Modal */}
+      <InstanceFormModal
+        visible={showInstanceModal}
+        stateUcode={selectedStateForInstance?.ucode || ''}
+        stateTitle={selectedStateForInstance?.title || ''}
+        existingInstance={editingInstance ? {
+          ...editingInstance,
+          stateid: editingInstance.stateid,
+          qty: editingInstance.qty,
+          value: editingInstance.value,
+          currency: editingInstance.currency,
+          available: editingInstance.available === 1,
+          lat: editingInstance.lat,
+          lng: editingInstance.lng,
+        } : undefined}
         onClose={() => {
-          setShowForm(false);
-          setEditingState(null);
+          setShowInstanceModal(false);
+          setEditingInstance(null);
+          setSelectedStateForInstance(null);
         }}
-        onSubmit={handleSubmit}
+        onSubmit={handleInstanceSubmit}
+        onDelete={editingInstance ? handleInstanceDelete : undefined}
       />
     </View>
   );
@@ -620,5 +562,142 @@ const styles = StyleSheet.create({
     color: "#1C1C1E",
     fontWeight: "500",
     flexShrink: 1,
+  },
+
+  // Instance UI
+  addInstanceBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#007AFF15',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#007AFF30',
+  },
+  addInstanceText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#007AFF',
+  },
+
+  instancesSection: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#E5E5EA',
+  },
+  instancesSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  instancesSectionTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#8E8E93',
+    textTransform: 'uppercase',
+  },
+  instancesCount: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#007AFF',
+    backgroundColor: '#007AFF15',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+
+  noInstances: {
+    alignItems: 'center',
+    paddingVertical: 20,
+    backgroundColor: '#F8F8F8',
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E5E5EA',
+    borderStyle: 'dashed',
+  },
+  noInstancesText: {
+    fontSize: 14,
+    color: '#C7C7CC',
+    marginTop: 8,
+  },
+  addInstanceSmallBtn: {
+    marginTop: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#007AFF10',
+    borderRadius: 16,
+  },
+  addInstanceSmallText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#007AFF',
+  },
+
+  instanceItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E5E5EA',
+  },
+  instanceIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#007AFF15',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  instanceDetails: {
+    flex: 1,
+  },
+  instanceRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 4,
+  },
+  instanceQty: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1C1C1E',
+  },
+  instanceValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#34C759',
+  },
+  instanceStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  statusText: {
+    fontSize: 12,
+    color: '#8E8E93',
+  },
+  statusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  
+  // Overlay for states screen
+  overlayContainer: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#FFFFFF',
+    zIndex: 1000,
   },
 });

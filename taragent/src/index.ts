@@ -114,6 +114,197 @@ app.get('/api/state/:ucode', async (c) => {
   }
 });
 
+// LIST all states - for instance creation flow (search/select state)
+app.get('/api/states', async (c) => {
+  try {
+    const scope = c.req.query('scope') || 'shop:main';
+    const type = c.req.query('type'); // optional filter
+    const limit = parseInt(c.req.query('limit') || '50');
+    const db = getStatesDbClient(c.env.STATES_DB_URL, c.env.STATES_DB_TOKEN);
+
+    let sql = 'SELECT id, ucode, type, title, payload, scope FROM state WHERE scope = ?';
+    const args: any[] = [scope];
+
+    if (type) {
+      sql += ' AND type = ?';
+      args.push(type);
+    }
+
+    sql += ' ORDER BY ts DESC LIMIT ?';
+    args.push(limit);
+
+    const result = await db.execute({ sql, args });
+    return c.json({ success: true, result: result.rows });
+  } catch (err: any) {
+    console.error('States LIST error:', err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// ─── /api/instance — Instance CRUD (working state under products/services) ───
+
+const InstanceBodySchema = z.object({
+  id: z.string().optional(), // Optional: pass local ID to ensure consistency
+  stateid: z.string(), // The ucode of the parent state (e.g., "product:coffee")
+  type: z.string().default('inventory'),
+  scope: z.string().default('shop:main'),
+  qty: z.number().optional(),
+  value: z.number().optional(),
+  currency: z.string().default('INR'),
+  available: z.boolean().default(true),
+  lat: z.number().optional(),
+  lng: z.number().optional(),
+  h3: z.string().optional(),
+  startts: z.string().optional(),
+  endts: z.string().optional(),
+  payload: z.record(z.any()).optional(),
+});
+
+// CREATE instance - using STATES DB (the working one, online-first)
+app.post('/api/instance', async (c) => {
+  try {
+    const body = await c.req.json();
+    const parsed = InstanceBodySchema.safeParse(body);
+    if (!parsed.success) return c.json({ error: 'Invalid payload', details: parsed.error.errors }, 400);
+
+    const data = parsed.data;
+    const id = data.id || crypto.randomUUID();
+    const now = new Date().toISOString();
+
+    // Use STATES DB (the working one - instances are now online-first)
+    const db = getStatesDbClient(c.env.STATES_DB_URL, c.env.STATES_DB_TOKEN);
+
+    // Create table if not exists
+    try {
+      await db.execute({
+        sql: `CREATE TABLE IF NOT EXISTS instance (
+          id TEXT PRIMARY KEY,
+          stateid TEXT NOT NULL,
+          type TEXT,
+          scope TEXT,
+          qty REAL,
+          value REAL,
+          currency TEXT,
+          available INTEGER DEFAULT 1,
+          lat REAL,
+          lng REAL,
+          h3 TEXT,
+          startts TEXT,
+          endts TEXT,
+          ts TEXT,
+          payload TEXT
+        )`,
+        args: [],
+      });
+    } catch (tableErr: any) {
+      // Table might already exist, continue
+      console.warn('Table creation warning:', tableErr.message);
+    }
+
+    // Insert the data
+    await db.execute({
+      sql: `INSERT INTO instance (id, stateid, type, scope, qty, value, currency, available, lat, lng, h3, startts, endts, ts, payload)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [
+        id,
+        data.stateid,
+        data.type || 'inventory',
+        data.scope || 'shop:main',
+        data.qty ?? null,
+        data.value ?? null,
+        data.currency || 'INR',
+        data.available ? 1 : 0,
+        data.lat ?? null,
+        data.lng ?? null,
+        data.h3 ?? null,
+        data.startts ?? null,
+        data.endts ?? null,
+        now,
+        data.payload ? JSON.stringify(data.payload) : null
+      ],
+    });
+
+    return c.json({ success: true, result: { id, ...data } }, 201);
+  } catch (err: any) {
+    console.error('Instance CREATE error:', err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// READ instances by stateid (uses STATES DB - online-first)
+app.get('/api/instance/:stateid', async (c) => {
+  try {
+    const stateid = c.req.param('stateid');
+    const scope = c.req.query('scope') || 'shop:main';
+    const db = getStatesDbClient(c.env.STATES_DB_URL, c.env.STATES_DB_TOKEN);
+
+    const result = await db.execute({
+      sql: `SELECT * FROM instance WHERE stateid = ? AND scope = ? ORDER BY ts DESC`,
+      args: [stateid, scope],
+    });
+
+    return c.json({ success: true, result: result.rows });
+  } catch (err: any) {
+    console.error('Instance READ error:', err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// UPDATE instance (uses STATES DB - online-first)
+app.put('/api/instance/:id', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const body = await c.req.json();
+    const db = getStatesDbClient(c.env.STATES_DB_URL, c.env.STATES_DB_TOKEN);
+
+    // Build dynamic update query
+    const fields: string[] = [];
+    const values: any[] = [];
+    
+    if (body.qty !== undefined) { fields.push('qty = ?'); values.push(body.qty); }
+    if (body.value !== undefined) { fields.push('value = ?'); values.push(body.value); }
+    if (body.currency !== undefined) { fields.push('currency = ?'); values.push(body.currency); }
+    if (body.available !== undefined) { fields.push('available = ?'); values.push(body.available ? 1 : 0); }
+    if (body.lat !== undefined) { fields.push('lat = ?'); values.push(body.lat); }
+    if (body.lng !== undefined) { fields.push('lng = ?'); values.push(body.lng); }
+    if (body.h3 !== undefined) { fields.push('h3 = ?'); values.push(body.h3); }
+    if (body.startts !== undefined) { fields.push('startts = ?'); values.push(body.startts); }
+    if (body.endts !== undefined) { fields.push('endts = ?'); values.push(body.endts); }
+    if (body.payload !== undefined) { fields.push('payload = ?'); values.push(JSON.stringify(body.payload)); }
+
+    if (fields.length === 0) return c.json({ error: 'No fields to update' }, 400);
+    
+    values.push(id);
+    await db.execute({
+      sql: `UPDATE instance SET ${fields.join(', ')} WHERE id = ?`,
+      args: values,
+    });
+
+    return c.json({ success: true, result: { id, updated: true } });
+  } catch (err: any) {
+    console.error('Instance UPDATE error:', err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// DELETE instance (uses STATES DB - online-first)
+app.delete('/api/instance/:id', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const db = getStatesDbClient(c.env.STATES_DB_URL, c.env.STATES_DB_TOKEN);
+
+    await db.execute({
+      sql: 'DELETE FROM instance WHERE id = ?',
+      args: [id],
+    });
+
+    return c.json({ success: true, result: { id, deleted: true } });
+  } catch (err: any) {
+    console.error('Instance DELETE error:', err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
 // ─── /api/stateai — Embedding management (mobile sends local embeddings) ───
 
 const EmbeddingBodySchema = z.object({

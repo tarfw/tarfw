@@ -6,8 +6,8 @@ import {
   StyleSheet,
   TouchableOpacity,
   FlatList,
-  SafeAreaView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { STATE_TYPES, StateTypeDef } from '../src/config/stateSchemas';
 
@@ -18,10 +18,11 @@ interface Props {
 }
 
 export function StateTypePickerModal({ visible, onClose, onSelect }: Props) {
+  const insets = useSafeAreaInsets();
   return (
     <Modal animationType="slide" visible={visible} onRequestClose={onClose}>
-      <SafeAreaView style={styles.safe}>
-        <View style={styles.header}>
+      <View style={styles.safe}>
+        <View style={[styles.header, { paddingTop: Math.max(insets.top, 16) }]}>
           <Text style={styles.title}>New State</Text>
           <TouchableOpacity onPress={onClose} hitSlop={8}>
             <Ionicons name="close" size={22} color="#999" />
@@ -44,7 +45,7 @@ export function StateTypePickerModal({ visible, onClose, onSelect }: Props) {
           )}
           ItemSeparatorComponent={() => <View style={styles.sep} />}
         />
-      </SafeAreaView>
+      </View>
     </Modal>
   );
 }
@@ -56,7 +57,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 16,
     paddingBottom: 12,
   },
   title: {

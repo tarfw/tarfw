@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS state (
 );
 
 -- 2. instance (working state)
+-- Note: stateid references state.ucode, NOT state.id (state is in states DB, instance is in instances DB)
 CREATE TABLE IF NOT EXISTS instance (
   id TEXT PRIMARY KEY,
   stateid TEXT NOT NULL,
@@ -29,8 +30,7 @@ CREATE TABLE IF NOT EXISTS instance (
   startts TIMESTAMPTZ,
   endts TIMESTAMPTZ,
   ts TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-  payload TEXT,
-  FOREIGN KEY (stateid) REFERENCES state(id)
+  payload TEXT
 );
 
 -- 3. trace (event ledger)
@@ -48,10 +48,10 @@ CREATE TABLE IF NOT EXISTS trace (
 );
 
 -- 4. stateai (vector search)
+-- Note: state_id references state.id (both in states DB)
 CREATE TABLE IF NOT EXISTS stateai (
   state_id TEXT PRIMARY KEY,
-  embedding F32_BLOB(384),
-  FOREIGN KEY (state_id) REFERENCES state(id)
+  embedding F32_BLOB(384)
 );
 
 -- Indexes

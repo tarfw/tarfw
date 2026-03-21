@@ -6,6 +6,7 @@
   "vars": {
     "STATES_DB_URL": "libsql://states-tarframework.aws-eu-west-1.turso.io",
     "STATES_DB_TOKEN": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NzQwNzk5NzQsImlkIjoiMDE5ZDBmNTYtNDAwMS03YWExLThkNWQtOGY1YzkyZGFlMDc2IiwicmlkIjoiZDNmZjRhN2MtOThkZi00OTg3LWJjYjUtMjRlNGEwYTI3OWE1In0.HuH6t-vXlSuvnexhyqU-bEZffYQEPp8bITBD0hzi4Kcmb53XqvzBZUtz8QCjVO9HyOzB9ujnbDtB_maJN8-DAw",
+    // Use libsql:// URL (HTTP transport, no sync)
     "INSTANCES_DB_URL": "libsql://instances-tarframework.aws-eu-west-1.turso.io",
     "INSTANCES_DB_TOKEN": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NzQwODAwODQsImlkIjoiMDE5ZDBmNTYtYTEwMS03OWE2LWJhYWMtY2Y4YjFiNGJjNDE3IiwicmlkIjoiMmNkM2U4OGItNGU0ZS00NTgzLWI1OGMtYzVjZGIzYjI3NzAyIn0.iUK00KHv6W3nnkJl3B3ELSI_62npG9T0U5wOSebthek2CNc-7wy7qPk4W40I_aBs20RWtBKOdG3s4zURnDQDCA"
   },

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
-import { createStateLocal, updateStateLocal, deleteStateLocal, getAllStates, pullData, searchStates, upsertEmbedding, getStateIdByUcode, getStatesWithoutEmbeddings } from "../src/db/turso";
+import { createStateLocal, updateStateLocal, deleteStateLocal, getAllStates, searchStates, upsertEmbedding, getStateIdByUcode, getStatesWithoutEmbeddings, getInstancesByState, createInstance, updateInstance, deleteInstance, Instance } from "../src/db/turso";
 import { generateEmbedding } from "../src/lib/embeddings";
+import { listStatesApi } from "../src/api/client";
 
 type AgentState = {
   loading: boolean;
@@ -12,6 +13,13 @@ type AgentState = {
   updateState: (ucode: string, title: string, payload: any) => Promise<void>;
   deleteState: (ucode: string) => Promise<void>;
   search: (query: string) => Promise<void>;
+  // Instance methods
+  loadInstances: (stateid: string) => Promise<Instance[]>;
+  addInstance: (data: { stateid: string; qty?: number; value?: number; currency?: string; available?: boolean; type?: string }) => Promise<void>;
+  editInstance: (id: string, data: Partial<Instance>) => Promise<void>;
+  removeInstance: (id: string) => Promise<void>;
+  // State search for instance creation
+  fetchStatesFromRemote: (type?: string) => Promise<any[]>;
 };
 
 const AgentContext = createContext<AgentState>({
@@ -24,6 +32,11 @@ const AgentContext = createContext<AgentState>({
   updateState: async () => {},
   deleteState: async () => {},
   search: async () => {},
+  loadInstances: async () => [],
+  addInstance: async () => {},
+  editInstance: async () => {},
+  removeInstance: async () => {},
+  fetchStatesFromRemote: async () => [],
 });
 
 const SCOPE = "shop:main";
@@ -37,23 +50,12 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     setLoading(true);
     searchCounterRef.current++; // Invalidate any pending searches
     try {
-      // Sync first
-      await pullData();
-      
-      const states = await getAllStates(SCOPE);
-      setResult({ result: states });
-
-      // Re-index any missing embeddings locally in the background
-      reindexMissingEmbeddings().catch(err => console.error('Background re-indexing error:', err));
+      // API-only: fetch states from remote, no local sync
+      const response = await listStatesApi(SCOPE);
+      setResult({ result: response.result || [] });
     } catch (e) {
-      console.error('Failed to load local states:', e);
-      // Fallback: still try to load what we have
-      try {
-        const states = await getAllStates(SCOPE);
-        setResult({ result: states });
-      } catch (innerE) {
-        console.error('Total failure loading states:', innerE);
-      }
+      console.error('Failed to load states from API:', e);
+      setResult({ result: [] });
     } finally {
       setLoading(false);
     }
@@ -167,6 +169,68 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // Instance methods for working state under products/services
+  const loadInstances = async (stateid: string): Promise<Instance[]> => {
+    try {
+      return await getInstancesByState(stateid, SCOPE);
+    } catch (e) {
+      console.error('Failed to load instances:', e);
+      return [];
+    }
+  };
+
+  const addInstance = async (data: { stateid: string; qty?: number; value?: number; currency?: string; available?: boolean; type?: string }) => {
+    console.log('[useAgentState.addInstance] START - data:', JSON.stringify(data));
+    setLoading(true);
+    try {
+      const result = await createInstance({ ...data, scope: SCOPE });
+      console.log('[useAgentState.addInstance] createInstance result:', JSON.stringify(result));
+    } catch (e: any) {
+      console.error('[useAgentState.addInstance] Failed to add instance:', e.message, e.stack);
+    } finally {
+      console.log('[useAgentState.addInstance] DONE - setting loading false');
+      setLoading(false);
+    }
+  };
+
+  const editInstance = async (id: string, data: Partial<Instance>) => {
+    setLoading(true);
+    try {
+      // Convert boolean available to number for API
+      const apiData = { ...data };
+      if (apiData.available !== undefined) {
+        apiData.available = apiData.available ? 1 : 0 as any;
+      }
+      await updateInstance(id, apiData);
+    } catch (e) {
+      console.error('Failed to update instance:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const removeInstance = async (id: string) => {
+    setLoading(true);
+    try {
+      await deleteInstance(id);
+    } catch (e) {
+      console.error('Failed to delete instance:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch states from remote for instance creation flow
+  const fetchStatesFromRemote = async (type?: string): Promise<any[]> => {
+    try {
+      const response = await listStatesApi(SCOPE, type, 50);
+      return response.result || [];
+    } catch (e) {
+      console.error('Failed to fetch states from remote:', e);
+      return [];
+    }
+  };
+
 
   return (
     <AgentContext.Provider
@@ -180,6 +244,11 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
         updateState,
         deleteState,
         search,
+        loadInstances,
+        addInstance,
+        editInstance,
+        removeInstance,
+        fetchStatesFromRemote,
       }}
     >
       {children}

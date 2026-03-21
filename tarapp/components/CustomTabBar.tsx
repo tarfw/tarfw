@@ -289,7 +289,7 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
       case 'agents':
         return <Feather name="square" size={size} color={color} />;
       case 'memories':
-        return <Ionicons name="albums-outline" size={size} color={color} />;
+        return <Ionicons name="cube-outline" size={size} color={color} />;
       case 'relay':
         return <MaterialCommunityIcons name="asterisk" size={size} color={color} />;
       default:
