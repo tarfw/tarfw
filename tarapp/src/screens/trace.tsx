@@ -81,7 +81,7 @@ export default function LiveTracking() {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerContent}>
-          <Text style={styles.title}>Trace</Text>
+          <Text style={styles.title}>Workspace</Text>
           <View style={styles.statusBadge}>
             <Animated.View
               style={[
@@ -95,7 +95,6 @@ export default function LiveTracking() {
             <Text style={styles.statusText}>{status}</Text>
           </View>
         </View>
-        <Text style={styles.subtitle}>Real-time TAR event stream</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.list}>

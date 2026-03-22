@@ -13,13 +13,16 @@ type AgentState = {
   updateState: (ucode: string, title: string, payload: any) => Promise<void>;
   deleteState: (ucode: string) => Promise<void>;
   search: (query: string) => Promise<void>;
-  // Instance methods
   loadInstances: (stateid: string) => Promise<Instance[]>;
   addInstance: (data: { stateid: string; qty?: number; value?: number; currency?: string; available?: boolean; type?: string }) => Promise<void>;
   editInstance: (id: string, data: Partial<Instance>) => Promise<void>;
   removeInstance: (id: string) => Promise<void>;
-  // State search for instance creation
   fetchStatesFromRemote: (type?: string) => Promise<any[]>;
+  // Global picker state
+  isPickerVisible: boolean;
+  setPickerVisible: (v: boolean) => void;
+  isSearchVisible: boolean;
+  setSearchVisible: (v: boolean) => void;
 };
 
 const AgentContext = createContext<AgentState>({
@@ -37,6 +40,10 @@ const AgentContext = createContext<AgentState>({
   editInstance: async () => {},
   removeInstance: async () => {},
   fetchStatesFromRemote: async () => [],
+  isPickerVisible: false,
+  setPickerVisible: () => {},
+  isSearchVisible: false,
+  setSearchVisible: () => {},
 });
 
 const SCOPE = "shop:main";
@@ -44,6 +51,8 @@ const SCOPE = "shop:main";
 export function AgentProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
+  const [isPickerVisible, setPickerVisible] = useState(false);
+  const [isSearchVisible, setSearchVisible] = useState(false);
   const searchCounterRef = React.useRef(0);
 
   const loadStates = async () => {
@@ -180,15 +189,12 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   };
 
   const addInstance = async (data: { stateid: string; qty?: number; value?: number; currency?: string; available?: boolean; type?: string }) => {
-    console.log('[useAgentState.addInstance] START - data:', JSON.stringify(data));
     setLoading(true);
     try {
-      const result = await createInstance({ ...data, scope: SCOPE });
-      console.log('[useAgentState.addInstance] createInstance result:', JSON.stringify(result));
-    } catch (e: any) {
-      console.error('[useAgentState.addInstance] Failed to add instance:', e.message, e.stack);
+      await createInstance({ ...data, scope: SCOPE });
+    } catch (e) {
+      // Silent fail
     } finally {
-      console.log('[useAgentState.addInstance] DONE - setting loading false');
       setLoading(false);
     }
   };
@@ -249,6 +255,10 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
         editInstance,
         removeInstance,
         fetchStatesFromRemote,
+        isPickerVisible,
+        setPickerVisible,
+        isSearchVisible,
+        setSearchVisible,
       }}
     >
       {children}

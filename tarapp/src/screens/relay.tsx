@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 const CHANNELS = [
@@ -21,42 +21,56 @@ const CHANNELS = [
 
 export default function RelayScreen() {
   const handleCopy = (text: string) => {
-    Alert.alert("Copied Endpoint", text);
+    Alert.alert("Endpoint Copied", "The API channel URL has been copied to your clipboard.");
   };
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Relay</Text>
+        <Text style={styles.headerSub}>Connect your external channels to the TAR framework</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.listContent}>
-        <View style={styles.list}>
-          {CHANNELS.map((item, index) => (
-            <Pressable 
-              key={item.id}
-              style={({pressed}) => [
-                styles.listItem, 
-                pressed && styles.itemPressed,
-                index === CHANNELS.length - 1 && styles.lastItem
-              ]}
-              onPress={() => handleCopy(item.url)}
-            >
-              <View style={[styles.iconBox, { backgroundColor: item.color + '15' }]}>
-                <Ionicons name={item.icon} size={20} color={item.color} />
+        {CHANNELS.map((item) => (
+          <Pressable 
+            key={item.id}
+            style={({pressed}) => [
+              styles.card, 
+              pressed && styles.cardPressed
+            ]}
+            onPress={() => handleCopy(item.url)}
+          >
+            <View style={styles.cardHeader}>
+              <View style={[styles.iconBox, { backgroundColor: item.color }]}>
+                <Ionicons name={item.icon} size={24} color="#FFF" />
               </View>
-              
               <View style={styles.itemInfo}>
                 <Text style={styles.itemTitle}>{item.title}</Text>
-                <Text style={styles.itemUrl} numberOfLines={1} ellipsizeMode="middle">
-                  {item.url}
-                </Text>
+                <View style={styles.statusTag}>
+                  <View style={styles.statusDot} />
+                  <Text style={styles.statusText}>Active</Text>
+                </View>
               </View>
+              <Ionicons name="copy-outline" size={20} color="#AEAEB2" />
+            </View>
 
-              <Ionicons name="copy-outline" size={18} color="#C7C7CC" />
-            </Pressable>
-          ))}
-        </View>
+            <View style={styles.divider} />
+
+            <View style={styles.urlContainer}>
+              <Text style={styles.urlLabel}>ENDPOINT URL</Text>
+              <Text style={styles.itemUrl} numberOfLines={1} ellipsizeMode="tail">
+                {item.url}
+              </Text>
+            </View>
+          </Pressable>
+        ))}
+        
+        {/* Placeholder for adding more items */}
+        <Pressable style={styles.addCard}>
+          <Ionicons name="add-circle-outline" size={24} color="#ACACAC" />
+          <Text style={styles.addCardText}>Configure New Channel</Text>
+        </Pressable>
       </ScrollView>
     </View>
   );
@@ -68,56 +82,124 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   header: {
-    paddingHorizontal: 20,
-    paddingVertical: 15,
+    paddingHorizontal: 24,
+    paddingTop: 10,
+    paddingBottom: 24,
   },
   headerTitle: {
     fontSize: 32,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#1C1C1E',
     letterSpacing: -0.5,
   },
+  headerSub: {
+    fontSize: 15,
+    color: '#8E8E93',
+    marginTop: 4,
+    lineHeight: 20,
+  },
   listContent: {
-    paddingBottom: 40,
+    paddingHorizontal: 20,
+    paddingBottom: 60,
+    gap: 16,
   },
-  list: {
-    marginTop: 10,
+  card: {
+    backgroundColor: '#F8F8F8',
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E5E5EA',
   },
-  listItem: {
+  cardPressed: {
+    backgroundColor: '#F2F2F7',
+    transform: [{ scale: 0.98 }],
+  },
+  cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#E5E5EA',
-  },
-  lastItem: {
-    borderBottomWidth: 0,
-  },
-  itemPressed: {
-    backgroundColor: '#F2F2F7',
+    marginBottom: 16,
   },
   iconBox: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
+    width: 48,
+    height: 48,
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 15,
+    marginRight: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   itemInfo: {
     flex: 1,
-    marginRight: 10,
   },
   itemTitle: {
-    fontSize: 17,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: '700',
     color: '#1C1C1E',
-    marginBottom: 2,
+    marginBottom: 4,
+  },
+  statusTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#34C75915',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#34C759',
+    marginRight: 6,
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#34C759',
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#E5E5EA',
+    marginBottom: 16,
+  },
+  urlContainer: {
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E5E5EA',
+  },
+  urlLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#AEAEB2',
+    marginBottom: 4,
+    letterSpacing: 0.5,
   },
   itemUrl: {
     fontSize: 13,
+    color: '#48484A',
+    fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }),
+  },
+  addCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#E5E5EA',
+    borderStyle: 'dashed',
+    marginTop: 8,
+    gap: 10,
+  },
+  addCardText: {
+    fontSize: 16,
+    fontWeight: '600',
     color: '#8E8E93',
-    fontFamily: 'monospace',
   },
 });

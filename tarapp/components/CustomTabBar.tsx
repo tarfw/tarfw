@@ -43,7 +43,7 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
   const insets = useSafeAreaInsets();
   const isAgentsTab = state.routes[state.index]?.name === 'agents';
   const { visible: keyboardVisible } = useKeyboard();
-  const { loading, setLoading, setResult } = useAgentState();
+  const { loading, setLoading, setResult, setPickerVisible, setSearchVisible } = useAgentState();
 
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
@@ -440,27 +440,57 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
                 })()}
               </View>
 
-              {/* RIGHT SECTION: Relay Tab */}
+              {/* RIGHT SECTION: Relay & Add Button */}
               <View style={styles.rightSection}>
-                {(() => {
-                  const route = state.routes[3];
-                  const isFocused = state.index === 3;
-                  const onPress = () => {
-                    if (process.env.EXPO_OS === 'ios') {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    }
-                    navigation.navigate(route.name);
-                  };
-                  return (
-                    <TouchableOpacity
-                      onPress={onPress}
-                      activeOpacity={0.7}
-                      style={styles.tab}
-                    >
-                      {renderIcon(route.name, isFocused)}
-                    </TouchableOpacity>
-                  );
-                })()}
+                <View style={styles.toggleCluster}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      if (process.env.EXPO_OS === 'ios') {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      }
+                      setSearchVisible(true);
+                    }}
+                    activeOpacity={0.7}
+                    style={styles.toggleTab}
+                  >
+                    <Ionicons name="search" size={20} color="#8E8E93" />
+                  </TouchableOpacity>
+                  {(() => {
+                    const route = state.routes[3];
+                    const isFocused = state.index === 3;
+                    const onPress = () => {
+                      if (process.env.EXPO_OS === 'ios') {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      }
+                      navigation.navigate(route.name);
+                    };
+                    return (
+                      <TouchableOpacity
+                        onPress={onPress}
+                        activeOpacity={0.7}
+                        style={[
+                          styles.toggleTab,
+                          isFocused && styles.toggleTabActive,
+                        ]}
+                      >
+                        {renderIcon(route.name, isFocused)}
+                      </TouchableOpacity>
+                    );
+                  })()}
+                  
+                  <TouchableOpacity
+                    onPress={() => {
+                      if (process.env.EXPO_OS === 'ios') {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      }
+                      setPickerVisible(true);
+                    }}
+                    activeOpacity={0.7}
+                    style={styles.toggleTab}
+                  >
+                    <Ionicons name="add" size={24} color="#8E8E93" />
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
           </BlurView>

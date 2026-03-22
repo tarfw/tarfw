@@ -25,7 +25,7 @@ interface Props {
   onSubmit: (ucode: string, title: string, payload: Record<string, any>) => Promise<void>;
 }
 
-export function StateFormModal({ visible, stateType, existingState, onClose, onSubmit }: Props) {
+export function CrudMemories({ visible, stateType, existingState, onClose, onSubmit }: Props) {
   const isEditing = !!existingState;
   const [idPart, setIdPart] = useState('');
   const [title, setTitle] = useState('');

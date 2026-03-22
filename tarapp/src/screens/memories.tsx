@@ -11,6 +11,7 @@ import {
   TextInput,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAgentState } from "@/hooks/useAgentState";
 import { InstanceFormModal } from "@/components/InstanceFormModal";
 import { Instance } from "@/src/db/turso";
@@ -25,6 +26,7 @@ export default function MemoriesScreen() {
     removeInstance,
     fetchStatesFromRemote,
   } = useAgentState();
+  const insets = useSafeAreaInsets();
 
   // Show states selection screen
   const [showStatesScreen, setShowStatesScreen] = useState(false);
@@ -39,42 +41,69 @@ export default function MemoriesScreen() {
   const [showInstanceModal, setShowInstanceModal] = useState(false);
   const [editingInstance, setEditingInstance] = useState<Instance | null>(null);
 
-  // Load all instances on mount
+  // Track if this is first load (for initial loading state)
+  const [isFirstLoad, setIsFirstLoad] = useState(true);
+  // Prevent sync loop
+  const [isSyncing, setIsSyncing] = useState(false);
+  
+  // Load all instances on mount - local-first, don't block UI
   useEffect(() => {
+    // Show local data immediately, sync in background
     loadAllInstances();
+    
+    // Sync on app foreground (proper Turso offline-first pattern)
+    const { AppState } = require('react-native');
+    const subscription = AppState.addEventListener('change', (nextAppState: string) => {
+      if (nextAppState === 'active') {
+        // App came to foreground - sync in background
+        syncInBackground();
+      }
+    });
+    
+    return () => {
+      subscription.remove();
+    };
   }, []);
+  
+  // Background sync function - doesn't block UI
+  const syncInBackground = async () => {
+    if (isSyncing) return; // Prevent duplicate sync
+    setIsSyncing(true);
+    try {
+      const { getAllInstances, pullData } = await import('@/src/db/turso');
+      // Sync instances from remote
+      await pullData();
+      // After sync, reload ALL instances from local DB
+      const allInst = await getAllInstances();
+      setAllInstances(allInst);
+    } catch (e) {
+      // Silent fail for background sync
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   const loadAllInstances = async () => {
-    console.log('[memories.tsx loadAllInstances] START');
-    setInstancesLoading(true);
     try {
-      // First get all states, then load instances for each
-      console.log('[memories.tsx loadAllInstances] Fetching states from remote...');
-      const states = await fetchStatesFromRemote();
-      console.log('[memories.tsx loadAllInstances] Got states:', states.length, 'states');
+      // Get ALL instances directly from local DB (local-first)
+      const { getAllInstances } = await import('@/src/db/turso');
       
-      const allInst: Instance[] = [];
+      // Load all instances from local DB
+      const allInst = await getAllInstances();
       
-      for (const state of states) {
-        console.log('[memories.tsx loadAllInstances] Loading instances for state:', state.ucode);
-        try {
-          const instances = await loadInstances(state.ucode);
-          console.log('[memories.tsx loadAllInstances] Got', instances.length, 'instances for', state.ucode);
-          allInst.push(...instances.map(inst => ({
-            ...inst,
-            _stateTitle: state.title || state.ucode
-          })));
-        } catch (e: any) {
-          console.error('[memories.tsx loadAllInstances] Error loading instances for', state.ucode, ':', e.message);
-        }
-      }
-      console.log('[memories.tsx loadAllInstances] Total instances collected:', allInst.length);
+      // Update state with local data immediately (no delay)
       setAllInstances(allInst);
+      
+      // Always mark first load complete when we have data
+      setIsFirstLoad(false);
+      
+      // Background sync after showing local data (non-blocking)
+      syncInBackground();
+      
     } catch (e: any) {
-      console.error('[memories.tsx loadAllInstances] Failed to load instances:', e.message, e.stack);
-    } finally {
+      // Silent fail - always clear loading state on error
       setInstancesLoading(false);
-      console.log('[memories.tsx loadAllInstances] DONE');
+      setIsFirstLoad(false);
     }
   };
 
@@ -104,25 +133,14 @@ export default function MemoriesScreen() {
   };
 
   const handleInstanceSubmit = async (data: any) => {
-    console.log('[memories.tsx handleInstanceSubmit] START - editingInstance:', !!editingInstance);
-    console.log('[memories.tsx handleInstanceSubmit] data:', JSON.stringify(data));
-    console.log('[memories.tsx handleInstanceSubmit] selectedStateForInstance:', selectedStateForInstance);
-    
     if (editingInstance) {
-      console.log('[memories.tsx handleInstanceSubmit] Editing existing instance, calling editInstance...');
       await editInstance(editingInstance.id, data);
     } else if (data.stateid) {
-      // Use stateid from data (passed from InstanceFormModal where state is selected)
-      console.log('[memories.tsx handleInstanceSubmit] Creating new instance for state:', data.stateid);
       await addInstance(data);
-    } else {
-      console.log('[memories.tsx handleInstanceSubmit] WARNING: No stateid in data!');
     }
     
     // Refresh all instances
-    console.log('[memories.tsx handleInstanceSubmit] Refreshing all instances...');
     await loadAllInstances();
-    console.log('[memories.tsx handleInstanceSubmit] DONE');
   };
 
   const handleInstanceDelete = async () => {
@@ -224,46 +242,6 @@ export default function MemoriesScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Instances</Text>
-        <View style={{ flexDirection: "row", gap: 12 }}>
-          <TouchableOpacity style={styles.addBtn} onPress={onRefresh}>
-            <Ionicons name="sync" size={20} color="#000" />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.addBtn} onPress={handleAddInstance}>
-            <Ionicons name="add" size={24} color="#000" />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <View style={styles.searchInputWrapper}>
-          <Ionicons
-            name="search"
-            size={18}
-            color="#8E8E93"
-            style={{ marginLeft: 12 }}
-          />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search instances..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholderTextColor="#8E8E93"
-          />
-          {searchQuery ? (
-            <TouchableOpacity
-              onPress={() => setSearchQuery("")}
-              style={{ padding: 8 }}
-            >
-              <Ionicons name="close-circle" size={18} color="#C7C7CC" />
-            </TouchableOpacity>
-          ) : null}
-        </View>
-      </View>
-
       {/* Content */}
       <ScrollView
         contentContainerStyle={[
@@ -275,7 +253,7 @@ export default function MemoriesScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        {(loading || instancesLoading || refreshing) && (
+        {(instancesLoading || refreshing) && (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="small" color="#000" />
             <Text style={styles.loadingText}>Loading instances...</Text>

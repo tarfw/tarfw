@@ -17,13 +17,13 @@ interface Props {
   onSelect: (type: StateTypeDef) => void;
 }
 
-export function StateTypePickerModal({ visible, onClose, onSelect }: Props) {
+export function AddMemories({ visible, onClose, onSelect }: Props) {
   const insets = useSafeAreaInsets();
   return (
     <Modal animationType="slide" visible={visible} onRequestClose={onClose}>
       <View style={styles.safe}>
         <View style={[styles.header, { paddingTop: Math.max(insets.top, 16) }]}>
-          <Text style={styles.title}>New State</Text>
+          <Text style={styles.title}>New Memory</Text>
           <TouchableOpacity onPress={onClose} hitSlop={8}>
             <Ionicons name="close" size={22} color="#999" />
           </TouchableOpacity>

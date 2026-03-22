@@ -33,8 +33,8 @@ CREATE TABLE IF NOT EXISTS instance (
   payload TEXT
 );
 
--- 3. trace (event ledger)
-CREATE TABLE IF NOT EXISTS trace (
+-- 3. events (event ledger) - renamed from trace
+CREATE TABLE IF NOT EXISTS events (
   id TEXT PRIMARY KEY,
   streamid TEXT NOT NULL,
   opcode INTEGER NOT NULL,
@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS stateai (
 );
 
 -- Indexes
-CREATE INDEX IF NOT EXISTS idx_trace_stream_ts ON trace(streamid, ts);
-CREATE INDEX IF NOT EXISTS idx_trace_scope ON trace(scope);
+CREATE INDEX IF NOT EXISTS idx_events_stream_ts ON events(streamid, ts);
+CREATE INDEX IF NOT EXISTS idx_events_scope ON events(scope);
 CREATE INDEX IF NOT EXISTS idx_instance_stateid ON instance(stateid);
 CREATE INDEX IF NOT EXISTS idx_state_ucode ON state(ucode);

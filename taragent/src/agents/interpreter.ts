@@ -97,7 +97,7 @@ export class InterpreterAgent {
   private env: any;
 
   constructor(db: Client, env: any) {
-    // This agent uses the Instances DB (instance + trace tables)
+    // This agent uses the Instances DB (instance + events tables)
     // It does NOT handle state CRUD - that's done via states DB
     this.db = db;
     this.env = env;
@@ -122,11 +122,11 @@ export class InterpreterAgent {
 
     let intentData: OpcodeResult;
     // Track whether this came from a direct CRUD call or NL.
-    // Only NL/operational intents should generate trace, instance and broadcast records.
+    // Only NL/operational intents should generate events, instance and broadcast records.
     const isDirectCrud = !!(req.action && req.data);
 
     if (isDirectCrud) {
-      // Structured CRUD path (App Interface) — pure state management, no trace/instance/broadcast
+      // Structured CRUD path (App Interface) — pure state management, no events/instance/broadcast
       intentData = await this.executeCrud(req.action!, req.data!, req.scope);
     } else if (req.text) {
       // Natural Language path (Chat / Agent Input)
@@ -146,10 +146,10 @@ export class InterpreterAgent {
     }
 
     // Steps 3–6 ONLY run for natural language / operational intents.
-    // Direct CRUD from the Memories screen does NOT produce traces, instances, or broadcasts.
+    // Direct CRUD from the Memories screen does NOT produce events, instances, or broadcasts.
     if (!isDirectCrud) {
-      // Step 3: Write to trace ledger
-      await this.writeTrace(intentData, req);
+      // Step 3: Write to events ledger
+      await this.writeEvents(intentData, req);
 
       // Step 4: Update the instance (working state)
       if (req.action !== "READ") {
@@ -187,12 +187,12 @@ export class InterpreterAgent {
     let opcode = 100; // Base Opcode for State Management
 
     // Note: Embeddings are now generated locally on mobile app
-    // This agent handles trace/instance only (high-frequency events)
+    // This agent handles events/instance only (high-frequency events)
 
     if (action === "CREATE") {
       opcode = 101;
       // Interpreter doesn't write to state - that's done via API to states DB
-      // This path is for trace/instance updates only
+      // This path for events/instance updates only
       console.log(`Interpreter: CREATE for ${ucode} - state handled by mobile API`);
       return {
         opcode: 101,
@@ -489,15 +489,15 @@ User Text: "${text}"`;
   }
 
   /**
-   * Inserts the event into the trace ledger in Turso
+   * Inserts the event into the events ledger in Turso
    */
-  private async writeTrace(data: OpcodeResult, req: any) {
-    const traceId = crypto.randomUUID();
+  private async writeEvents(data: OpcodeResult, req: any) {
+    const eventId = crypto.randomUUID();
     await this.db.execute({
-      sql: `INSERT INTO trace (id, streamid, opcode, status, delta, lat, lng, payload, scope) 
+      sql: `INSERT INTO events (id, streamid, opcode, status, delta, lat, lng, payload, scope) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
-        traceId,
+        eventId,
         data.streamid,
         data.opcode,
         data.status,
@@ -508,7 +508,7 @@ User Text: "${text}"`;
         req.scope,
       ],
     });
-    console.log(`Trace ${traceId} written successfully.`);
+    console.log(`Event ${eventId} written successfully.`);
   }
 
   /**

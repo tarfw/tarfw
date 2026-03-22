@@ -1,290 +1,126 @@
-import { connect, Database } from '@tursodatabase/sync-react-native';
-import { createStateApi, updateStateApi, deleteStateApi, upsertEmbeddingApi, createInstanceApi, getInstancesByStateApi, updateInstanceApi, deleteInstanceApi } from '../api/client';
+import { Database, getDbPath } from '@tursodatabase/sync-react-native';
+import { createStateApi, updateStateApi, deleteStateApi, searchServerApi } from '../api/client';
 
-// ─── Two Database Connections ───
-// FLIPPED: States now API-only (no sync), Instances now online-first
+// ─── Instance DB (Local-first) ───
+// Only sync instance + events tables from instances-tarframework
+const INSTANCES_DB_URL = 'libsql://instances-tarframework.aws-eu-west-1.turso.io';
+const INSTANCES_DB_TOKEN = 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NzQxOTQ0MDEsImlkIjoiMDE5ZDBmNTYtYTEwMS03OWE2LWJhYWMtY2Y4YjFiNGJjNDE3IiwicmlkIjoiMmNkM2U4OGItNGU0ZS00NTgzLWI1OGMtYzVjZGIzYjI3NzAyIn0.CaAlMH84Tk3LWiGyeY1--0dxmKd4k9lE2RyfSGPcX8bewQCIXpFagYT2SeMVCvvbvRxrSD5pM5dwABNTddcHCQ';
 
-// States DB: state + stateai → API-ONLY (from states-tarframework)
-// No local sync - always fetch from remote API to avoid sync engine issues
-const statesDbUrl = 'libsql://states-tarframework.aws-eu-west-1.turso.io';
-const statesDbToken = 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NzQwNzk5NzQsImlkIjoiMDE5ZDBmNTYtNDAwMS03YWExLThkNWQtOGY1YzkyZGFlMDc2IiwicmlkIjoiZDNmZjRhN2MtOThkZi00OTg3LWJjYjUtMjRlNGEwYTI3OWE1In0.HuH6t-vXlSuvnexhyqU-bEZffYQEPp8bITBD0hzi4Kcmb53XqvzBZUtz8QCjVO9HyOzB9ujnbDtB_maJN8-DAw';
+// Single database instance with cached init promise (local-first for instances)
+let dbInstance: Database | null = null;
+let initPromise: Promise<Database> | null = null;
 
-// Instances DB: instance → ONLINE-FIRST (from states-tarframework)
-// This DB now handles instances as online-first (the working DB)
-const instancesDbUrl = 'libsql://states-tarframework.aws-eu-west-1.turso.io';
-const instancesDbToken = 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NzQwNzk5NzQsImlkIjoiMDE5ZDBmNTYtNDAwMS03YWExLThkNWQtOGY1YzkyZGFlMDc2IiwicmlkIjoiZDNmZjRhN2MtOThkZi00OTg3LWJjYjUtMjRlNGEwYTI3OWE1In0.HuH6t-vXlSuvnexhyqU-bEZffYQEPp8bITBD0hzi4Kcmb53XqvzBZUtz8QCjVO9HyOzB9ujnbDtB_maJN8-DAw';
+// Initialize instance schema only (local-first tables)
+async function initSchema(db: Database) {
+  const schema = [
+    `CREATE TABLE IF NOT EXISTS instance (
+      id TEXT PRIMARY KEY,
+      stateid TEXT NOT NULL,
+      type TEXT,
+      scope TEXT,
+      qty REAL,
+      value REAL,
+      currency TEXT,
+      available INTEGER DEFAULT 1,
+      lat REAL,
+      lng REAL,
+      h3 TEXT,
+      startts TEXT,
+      endts TEXT,
+      ts TEXT,
+      payload TEXT
+    )`,
+    `CREATE TABLE IF NOT EXISTS events (
+      id TEXT PRIMARY KEY,
+      streamid TEXT NOT NULL,
+      opcode INTEGER NOT NULL,
+      delta REAL,
+      lat REAL,
+      lng REAL,
+      payload TEXT,
+      ts TEXT DEFAULT CURRENT_TIMESTAMP,
+      scope TEXT
+    )`,
+  ];
 
-// Database handles
-let statesDbHandle: Database | null = null;
-let instancesDbHandle: Database | null = null;
-let embeddingsTableReady = false;
-let instancesTablesReady = false;
-
-// Reset instances DB handle - call when schema changes or sync fails
-function resetInstancesDb() {
-  console.log('[turso] Resetting instances DB handle...');
-  instancesDbHandle = null;
-  instancesTablesReady = false;
-}
-
-async function ensureEmbeddingsTable(db: Database) {
-  if (embeddingsTableReady) return;
-  try {
-    await db.run(`
-      CREATE TABLE IF NOT EXISTS stateai (
-        state_id TEXT PRIMARY KEY,
-        embedding F32_BLOB(384),
-        FOREIGN KEY (state_id) REFERENCES state(id)
-      )
-    `);
-    embeddingsTableReady = true;
-  } catch (e: any) {
-    console.warn('Failed to create stateai table:', e);
-  }
-}
-
-async function ensureInstancesTables(db: Database) {
-  if (instancesTablesReady) return;
-  try {
-    // instance table - no foreign keys (state is in different DB)
-    await db.run(`
-      CREATE TABLE IF NOT EXISTS instance (
-        id TEXT PRIMARY KEY,
-        stateid TEXT NOT NULL,
-        type TEXT,
-        scope TEXT,
-        qty REAL,
-        value REAL,
-        currency TEXT,
-        available INTEGER DEFAULT 1,
-        lat REAL,
-        lng REAL,
-        h3 TEXT,
-        startts TEXT,
-        endts TEXT,
-        ts TEXT,
-        payload TEXT
-      )
-    `);
-    // trace table
-    await db.run(`
-      CREATE TABLE IF NOT EXISTS trace (
-        id TEXT PRIMARY KEY,
-        streamid TEXT NOT NULL,
-        opcode INTEGER NOT NULL,
-        status TEXT,
-        delta REAL,
-        lat REAL,
-        lng REAL,
-        payload TEXT,
-        ts TEXT,
-        scope TEXT
-      )
-    `);
-    // Index for faster lookups
-    await db.run(`CREATE INDEX IF NOT EXISTS idx_instance_stateid ON instance(stateid)`);
-    await db.run(`CREATE INDEX IF NOT EXISTS idx_trace_streamid ON trace(streamid)`);
-    instancesTablesReady = true;
-  } catch (e: any) {
-    console.warn('Failed to create instance/trace tables:', e);
-  }
-}
-
-// ─── States DB (state + stateai) ───
-export async function getStatesDb(): Promise<Database> {
-  if (!statesDbHandle) {
-    statesDbHandle = await connect({
-      path: 'states.db',
-      url: statesDbUrl,
-      authToken: statesDbToken,
-    });
+  for (const statement of schema) {
     try {
-      await statesDbHandle.pull();
+      await db.exec(statement);
     } catch (e: any) {
-      console.warn('States DB pull failed:', e);
+      // Table might already exist - ignore
     }
-    await ensureEmbeddingsTable(statesDbHandle);
   }
-  return statesDbHandle;
 }
 
-// ─── Instances DB (instance + trace) ───
+// ─── Instance DB Connection (Local-first, like @tar) ───
 export async function getInstancesDb(): Promise<Database> {
-  if (!instancesDbHandle) {
-    instancesDbHandle = await connect({
-      path: 'instances.db',
-      url: instancesDbUrl,
-      authToken: instancesDbToken,
+  if (dbInstance) return dbInstance;
+  if (initPromise) return initPromise;
+
+  initPromise = (async () => {
+    const dbPath = getDbPath('instances.db');
+    const instance = new Database({
+      path: dbPath,
+      url: INSTANCES_DB_URL,
+      authToken: INSTANCES_DB_TOKEN,
     });
-    try {
-      await instancesDbHandle.pull();
-    } catch (e: any) {
-      console.warn('Instances DB pull failed:', e);
-    }
-    await ensureInstancesTables(instancesDbHandle);
-  }
-  return instancesDbHandle;
+
+    // Connect first
+    await instance.connect();
+    
+    // Initialize schema
+    await initSchema(instance);
+
+    dbInstance = instance;
+    return instance;
+  })();
+
+  return initPromise;
 }
 
-// Legacy alias
-export async function getDb(): Promise<Database> {
-  return getStatesDb();
-}
-
-// ─── Pull functions for both DBs ───
-export async function pullStatesData() {
-  const db = await getStatesDb();
-  await db.pull();
-}
-
-export async function pullInstancesData() {
-  const db = await getInstancesDb();
-  await db.pull();
-}
-
-// Legacy alias
+// ─── Sync functions for instances (local-first) ───
 export async function pullData() {
-  await pullStatesData();
-}
-
-/**
- * State CRUD operations.
- * Reads come from the local replica (pulled from Turso).
- * Writes go through the taragent API, then we pull to sync locally.
- */
-export async function getAllStates(scope = 'shop:main') {
-  const db = await getDb();
-  const rows = await db.all(
-    'SELECT * FROM state WHERE scope = ? ORDER BY ts DESC',
-    scope
-  );
-  return rows;
-}
-
-export async function createStateLocal(ucode: string, title: string | undefined, payload: any, scope = 'shop:main') {
-  const result = await createStateApi(ucode, title, payload, scope);
-  const db = await getDb();
-  await db.pull();
-  // Return the id from the newly pulled state
-  const rows = await db.all('SELECT id FROM state WHERE ucode = ? AND scope = ? LIMIT 1', ucode, scope);
-  return rows.length > 0 ? (rows[0] as any).id : ucode;
-}
-
-export async function updateStateLocal(ucode: string, title: string | undefined, payload: any, scope = 'shop:main') {
-  await updateStateApi(ucode, title, payload, scope);
-  const db = await getDb();
-  await db.pull();
-}
-
-export async function deleteStateLocal(ucode: string, scope = 'shop:main') {
-  await deleteStateApi(ucode, scope);
-  const db = await getDb();
-  await db.pull();
-}
-
-export async function upsertEmbedding(stateId: string, vector: number[]) {
-  // Store locally for fast offline search
-  const db = await getStatesDb();
-  await db.run(
-    'INSERT OR REPLACE INTO stateai (state_id, embedding) VALUES (?, vector32(?))',
-    stateId, JSON.stringify(vector)
-  );
-  
-  // Also sync to remote DB so other clients can search
+  const db = await getInstancesDb();
   try {
-    await upsertEmbeddingApi(stateId, vector);
-  } catch (e) {
-    console.warn('Failed to sync embedding to remote:', e);
+    await db.push();
+    await db.pull();
+  } catch (e: any) {
+    throw e;
   }
 }
 
-export async function getStateIdByUcode(ucode: string, scope = 'shop:main'): Promise<string | null> {
-  const db = await getDb();
-  const rows = await db.all(
-    'SELECT id FROM state WHERE ucode = ? AND scope = ? LIMIT 1',
-    ucode, scope
-  );
-  return rows.length > 0 ? (rows[0] as any).id : null;
-}
-
-export async function getStatesWithoutEmbeddings(scope = 'shop:main') {
-  const db = await getDb();
-  return db.all(
-    `SELECT s.* FROM state s
-     LEFT JOIN stateai e ON s.id = e.state_id
-     WHERE s.scope = ? AND e.state_id IS NULL
-     ORDER BY s.ts DESC`,
-    scope
-  );
-}
-
-function cosineSimilarity(a: number[], b: number[]): number {
-  if (a.length !== b.length) return 0;
-  let dotProduct = 0;
-  let mA = 0;
-  let mB = 0;
-  for (let i = 0; i < a.length; i++) {
-    dotProduct += a[i] * b[i];
-    mA += a[i] * a[i];
-    mB += b[i] * b[i];
-  }
-  mA = Math.sqrt(mA);
-  mB = Math.sqrt(mB);
-  if (mA === 0 || mB === 0) return 0;
-  return dotProduct / (mA * mB);
-}
-
-export async function searchStates(queryVector: number[], scope = 'shop:main', limit = 10) {
-  const db = await getDb();
+export async function forcePullData() {
+  const db = await getInstancesDb();
   try {
-    // Native vector search using the dedicated embeddings table
-    const rows = await db.all(
-      `SELECT s.*, vector_distance_cos(e.embedding, vector32(?)) as distance
-       FROM state s
-       JOIN stateai e ON s.id = e.state_id
-       WHERE s.scope = ?
-       ORDER BY distance ASC
-       LIMIT ?`,
-      JSON.stringify(queryVector), scope, limit
-    );
-    return rows;
-  } catch (e) {
-    console.warn('Native vector search failed, falling back to JS:', e);
-    // Fallback: read embeddings from the new table and compute in JS
-    const allRows = await db.all(
-      `SELECT s.*, e.embedding as raw_embedding FROM state s
-       JOIN stateai e ON s.id = e.state_id
-       WHERE s.scope = ?`,
-      scope
-    );
-
-    const results = allRows.map((row: any) => {
-      try {
-        // raw_embedding may be a Float32Array or binary blob from F32_BLOB
-        // Try to parse if it's a string, otherwise treat as array-like
-        let embedding: number[];
-        if (typeof row.raw_embedding === 'string') {
-          embedding = JSON.parse(row.raw_embedding);
-        } else if (row.raw_embedding && row.raw_embedding.length) {
-          embedding = Array.from(row.raw_embedding);
-        } else {
-          return { ...row, distance: 999 };
-        }
-        return {
-          ...row,
-          distance: 1 - cosineSimilarity(queryVector, embedding)
-        };
-      } catch (parseErr) {
-        return { ...row, distance: 999 };
-      }
-    });
-
-    results.sort((a: any, b: any) => a.distance - b.distance);
-    return results.slice(0, limit);
+    await db.run('DELETE FROM instance');
+    await db.push();
+    await db.pull();
+  } catch (e: any) {
+    throw e;
   }
 }
 
-// ─── Instance CRUD (working state under products/services) ───
+export async function pushData() {
+  const db = await getInstancesDb();
+  try {
+    await db.push();
+  } catch (e: any) {
+    throw e;
+  }
+}
+
+export async function syncDb() {
+  const db = await getInstancesDb();
+  try {
+    await db.push();
+    await db.pull();
+    return true;
+  } catch (error: any) {
+    return false;
+  }
+}
+
+// ─── Instance CRUD (Local-first) ───
 
 export interface Instance {
   id: string;
@@ -304,12 +140,29 @@ export interface Instance {
   payload?: string;
 }
 
-export async function getInstancesByState(stateid: string, scope = 'shop:main'): Promise<Instance[]> {
-  // Use direct API call - more reliable than sync engine for instances
+// Simple UUID generator compatible with React Native
+function generateUUID(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
+// Import API functions
+import { createInstanceApi, getInstancesByStateApi, updateInstanceApi, deleteInstanceApi } from '../api/client';
+
+// Get ALL instances from local DB (for Memories screen)
+export async function getAllInstances(scope = 'shop:main'): Promise<Instance[]> {
   try {
-    const response = await getInstancesByStateApi(stateid, scope);
-    if (response.result) {
-      return response.result.map((row: any) => ({
+    const db = await getInstancesDb();
+    
+    const rows = await db.all(
+      'SELECT id, stateid, type, scope, qty, value, currency, available, lat, lng, h3, startts, endts, ts, payload FROM instance ORDER BY ts DESC'
+    );
+    
+    if (rows && rows.length > 0) {
+      return rows.map((row: any) => ({
         id: row.id,
         stateid: row.stateid,
         type: row.type,
@@ -328,15 +181,55 @@ export async function getInstancesByState(stateid: string, scope = 'shop:main'):
       }));
     }
     return [];
-  } catch (e: any) {
-    console.error('[getInstancesByState] API failed:', e.message);
-    // Fallback: try local DB
+  } catch (localErr: any) {
+    // Fallback to API
     try {
-      const db = await getInstancesDb();
-      const rows = await db.all(
-        'SELECT id, stateid, type, scope, qty, value, currency, available, lat, lng, h3, startts, endts, ts, payload FROM instance WHERE stateid = ? AND scope = ? ORDER BY ts DESC',
-        stateid, scope
-      );
+      const { getAllStates } = await import('./turso');
+      const states = await getAllStates(scope);
+      const allInst: Instance[] = [];
+      for (const state of states) {
+        const stateUcode = String(state.ucode || '');
+        if (!stateUcode) continue;
+        const instances = await getInstancesByStateApi(stateUcode, scope);
+        if (instances.result) {
+          allInst.push(...instances.result.map((row: any) => ({
+            id: row.id,
+            stateid: row.stateid,
+            type: row.type,
+            scope: row.scope,
+            qty: row.qty,
+            value: row.value,
+            currency: row.currency,
+            available: row.available,
+            lat: row.lat,
+            lng: row.lng,
+            h3: row.h3,
+            startts: row.startts,
+            endts: row.endts,
+            ts: row.ts,
+            payload: row.payload,
+          })));
+        }
+      }
+      return allInst;
+    } catch (apiErr: any) {
+      return [];
+    }
+  }
+}
+
+// Get instances filtered by stateid (for detail views)
+export async function getInstancesByState(stateid: string, scope = 'shop:main'): Promise<Instance[]> {
+  // Fast local-first read
+  try {
+    const db = await getInstancesDb();
+    
+    const rows = await db.all(
+      'SELECT id, stateid, type, scope, qty, value, currency, available, lat, lng, h3, startts, endts, ts, payload FROM instance WHERE stateid = ? AND scope = ? ORDER BY ts DESC',
+      stateid, scope
+    );
+    
+    if (rows && rows.length > 0) {
       return rows.map((row: any) => ({
         id: row.id,
         stateid: row.stateid,
@@ -354,23 +247,39 @@ export async function getInstancesByState(stateid: string, scope = 'shop:main'):
         ts: row.ts,
         payload: row.payload,
       }));
-    } catch (fallbackErr) {
-      console.error('[getInstancesByState] Local fallback also failed:', fallbackErr);
+    }
+    return [];
+  } catch (localErr: any) {
+    // Fallback to API if local DB fails
+    try {
+      const response = await getInstancesByStateApi(stateid, scope);
+      if (response.result) {
+        return response.result.map((row: any) => ({
+          id: row.id,
+          stateid: row.stateid,
+          type: row.type,
+          scope: row.scope,
+          qty: row.qty,
+          value: row.value,
+          currency: row.currency,
+          available: row.available,
+          lat: row.lat,
+          lng: row.lng,
+          h3: row.h3,
+          startts: row.startts,
+          endts: row.endts,
+          ts: row.ts,
+          payload: row.payload,
+        }));
+      }
+      return [];
+    } catch (apiErr: any) {
       return [];
     }
   }
 }
 
-// Simple UUID generator compatible with React Native
-function generateUUID(): string {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    const r = Math.random() * 16 | 0;
-    const v = c === 'x' ? r : (r & 0x3 | 0x8);
-    return v.toString(16);
-  });
-}
-
-// Direct API instance creation - no local storage, faster and reliable
+// Local-first instance creation
 export async function createInstance(data: {
   stateid: string;
   type?: string;
@@ -386,48 +295,87 @@ export async function createInstance(data: {
   endts?: string;
   payload?: Record<string, any>;
 }) {
-  console.log('[createInstance] START - data:', JSON.stringify(data));
-  
   const id = generateUUID();
-  console.log('[createInstance] Generated ID:', id);
-  
   const scope = data.scope || 'shop:main';
   
-  // Direct API call - no local storage delay
-  console.log('[createInstance] Calling API...');
+  // Try local-first: write to local DB, then sync to remote
   try {
-    const apiData = {
-      id,
-      stateid: data.stateid,
-      type: data.type || 'inventory',
-      scope,
-      qty: data.qty,
-      value: data.value,
-      currency: data.currency || 'INR',
-      available: data.available ?? true,
-      lat: data.lat,
-      lng: data.lng,
-      h3: data.h3,
-      startts: data.startts,
-      endts: data.endts,
-      payload: data.payload,
-    };
-    console.log('[createInstance] API payload:', JSON.stringify(apiData));
+    const db = await getInstancesDb();
     
-    const response = await createInstanceApi(apiData);
-    console.log('[createInstance] API SUCCESS:', JSON.stringify(response));
-    console.log('[createInstance] DONE - returning id:', id);
-    return { success: true, id, remote: true };
-  } catch (e: any) {
-    console.error('[createInstance] API FAILED:', e.message);
-    console.log('[createInstance] DONE with error - returning id:', id);
-    return { success: false, id, error: e.message };
+    // Insert locally first
+    await db.run(
+      `INSERT INTO instance (id, stateid, type, scope, qty, value, currency, available, lat, lng, h3, startts, endts, ts, payload)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        data.stateid,
+        data.type || 'inventory',
+        scope,
+        data.qty ?? null,
+        data.value ?? null,
+        data.currency || 'INR',
+        data.available ?? true ? 1 : 0,
+        data.lat ?? null,
+        data.lng ?? null,
+        data.h3 ?? null,
+        data.startts ?? null,
+        data.endts ?? null,
+        new Date().toISOString(),
+        data.payload ? JSON.stringify(data.payload) : null
+      ]
+    );
+    
+    // Sync to remote in background
+    try {
+      await createInstanceApi({
+        id,
+        stateid: data.stateid,
+        type: data.type || 'inventory',
+        scope,
+        qty: data.qty,
+        value: data.value,
+        currency: data.currency || 'INR',
+        available: data.available ?? true,
+        lat: data.lat,
+        lng: data.lng,
+        h3: data.h3,
+        startts: data.startts,
+        endts: data.endts,
+        payload: data.payload,
+      });
+    } catch (syncErr: any) {
+      // Continue even if remote sync fails - local is saved
+    }
+    
+    return { success: true, id, local: true };
+  } catch (localErr: any) {
+    // Local DB failed - fallback to API only
+    try {
+      const response = await createInstanceApi({
+        id,
+        stateid: data.stateid,
+        type: data.type || 'inventory',
+        scope,
+        qty: data.qty,
+        value: data.value,
+        currency: data.currency || 'INR',
+        available: data.available ?? true,
+        lat: data.lat,
+        lng: data.lng,
+        h3: data.h3,
+        startts: data.startts,
+        endts: data.endts,
+        payload: data.payload,
+      });
+      return { success: true, id, remote: true };
+    } catch (apiErr: any) {
+      return { success: false, id, error: apiErr.message };
+    }
   }
 }
 
 // Local-first instance update
 export async function updateInstance(id: string, data: any) {
-  // Validate: check if there are fields to update
   const fields: string[] = [];
   const values: any[] = [];
   
@@ -454,19 +402,18 @@ export async function updateInstance(id: string, data: any) {
     values
   );
   
-  // 2. API sync (skip push - libsql sync has issues with instances DB)
+  // 2. API sync in background
   try {
     await updateInstanceApi(id, data);
-    console.log('Instance updated on remote via API');
-  } catch (e) {
-    console.warn('Instance update API sync failed:', e);
+  } catch (e: any) {
+    // Continue silently - local update is saved
   }
   
-  // 3. Pull to sync
+  // 3. Pull to sync in background
   try {
-    await pullInstancesData();
-  } catch (e) {
-    console.warn('Instance pull after update failed:', e);
+    await pullData();
+  } catch (e: any) {
+    // Continue silently
   }
   
   return { success: true, id, local: true };
@@ -478,20 +425,87 @@ export async function deleteInstance(id: string) {
   const db = await getInstancesDb();
   await db.run('DELETE FROM instance WHERE id = ?', [id]);
   
-  // 2. API sync (skip push - libsql sync has issues with instances DB)
+  // 2. API sync in background
   try {
     await deleteInstanceApi(id);
-    console.log('Instance deleted on remote via API');
-  } catch (e) {
-    console.warn('Instance delete API sync failed:', e);
+  } catch (e: any) {
+    // Continue silently - local delete is saved
   }
   
-  // 3. Pull to sync
+  // 3. Pull to sync in background
   try {
-    await pullInstancesData();
-  } catch (e) {
-    console.warn('Instance pull after delete failed:', e);
+    await pullData();
+  } catch (e: any) {
+    // Continue silently
   }
   
   return { success: true, id, local: true };
 }
+
+// ─── States - Remote-only (HTTP API, no local sync) ───
+// States use HTTP API for vector search, no local database needed
+
+export async function getAllStates(scope = 'shop:main') {
+  // Use HTTP API - no local sync
+  try {
+    const { listStatesApi } = await import('../api/client');
+    const response = await listStatesApi(scope);
+    return response.result || [];
+  } catch (e) {
+    console.warn('Failed to fetch states from API:', e);
+    return [];
+  }
+}
+
+export async function createStateLocal(ucode: string, title: string | undefined, payload: any, scope = 'shop:main') {
+  const result = await createStateApi(ucode, title, payload, scope);
+  return result.result?.id || ucode;
+}
+
+export async function updateStateLocal(ucode: string, title: string | undefined, payload: any, scope = 'shop:main') {
+  await updateStateApi(ucode, title, payload, scope);
+}
+
+export async function deleteStateLocal(ucode: string, scope = 'shop:main') {
+  await deleteStateApi(ucode, scope);
+}
+
+// State vector search - use server API (remote-only)
+export async function searchStates(queryVector: number[], scope = 'shop:main', limit = 10) {
+  // Use server-side vector search (HTTP API)
+  try {
+    return await searchServerApi(queryVector, scope, limit);
+  } catch (e) {
+    console.warn('Vector search failed:', e);
+    return [];
+  }
+}
+
+// Helper functions - not needed for remote-only states but keep for compatibility
+export async function getStateIdByUcode(_ucode: string, _scope = 'shop:main'): Promise<string | null> {
+  // States are remote-only, no local ID
+  return null;
+}
+
+export async function getStatesWithoutEmbeddings(_scope = 'shop:main') {
+  // States are remote-only, embeddings managed server-side
+  return [];
+}
+
+export async function upsertEmbedding(_stateId: string, _vector: number[]) {
+  // Embeddings handled server-side for states
+}
+
+// Legacy aliases for backward compatibility
+export async function pullStatesData() {
+  // No-op for remote-only states
+}
+
+export async function pullInstancesData() {
+  return pullData();
+}
+
+export async function getStatesDb() {
+  // Not used - states are remote-only
+  return getInstancesDb();
+}

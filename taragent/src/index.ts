@@ -8,7 +8,7 @@ type Bindings = {
   // States DB (state + stateai)
   STATES_DB_URL: string;
   STATES_DB_TOKEN: string;
-  // Instances DB (instance + trace)
+  // Instances DB (instance + events)
   INSTANCES_DB_URL: string;
   INSTANCES_DB_TOKEN: string;
   // Durable Objects
@@ -160,7 +160,7 @@ const InstanceBodySchema = z.object({
   payload: z.record(z.any()).optional(),
 });
 
-// CREATE instance - using STATES DB (the working one, online-first)
+// CREATE instance - using INSTANCES DB (local-first for client sync)
 app.post('/api/instance', async (c) => {
   try {
     const body = await c.req.json();
@@ -171,11 +171,26 @@ app.post('/api/instance', async (c) => {
     const id = data.id || crypto.randomUUID();
     const now = new Date().toISOString();
 
-    // Use STATES DB (the working one - instances are now online-first)
-    const db = getStatesDbClient(c.env.STATES_DB_URL, c.env.STATES_DB_TOKEN);
+    console.log('[INSTANCE CREATE] DB URL:', c.env.INSTANCES_DB_URL);
+    
+    // Use INSTANCES DB - this is where client syncs from (instances-tarframework)
+    const db = getInstancesDbClient(c.env.INSTANCES_DB_URL, c.env.INSTANCES_DB_TOKEN);
+    console.log('[INSTANCE CREATE] Client created, checking existing tables...');
 
-    // Create table if not exists
+    // First check what tables exist
     try {
+      const tables = await db.execute({
+        sql: "SELECT name FROM sqlite_master WHERE type='table'",
+        args: []
+      });
+      console.log('[INSTANCE CREATE] Existing tables:', tables.rows);
+    } catch (checkErr: any) {
+      console.log('[INSTANCE CREATE] Table check error (may be empty DB):', checkErr.message);
+    }
+
+    // Create tables if not exists
+    try {
+      // Create instance table
       await db.execute({
         sql: `CREATE TABLE IF NOT EXISTS instance (
           id TEXT PRIMARY KEY,
@@ -196,9 +211,26 @@ app.post('/api/instance', async (c) => {
         )`,
         args: [],
       });
+      console.log('[INSTANCE CREATE] Instance table created/verified');
+      
+      // Create events table for interpreter
+      await db.execute({
+        sql: `CREATE TABLE IF NOT EXISTS events (
+          id TEXT PRIMARY KEY,
+          streamid TEXT NOT NULL,
+          opcode INTEGER NOT NULL,
+          status TEXT,
+          delta REAL,
+          lat REAL,
+          lng REAL,
+          payload TEXT,
+          ts TEXT DEFAULT CURRENT_TIMESTAMP,
+          scope TEXT
+        )`,
+        args: [],
+      });
     } catch (tableErr: any) {
-      // Table might already exist, continue
-      console.warn('Table creation warning:', tableErr.message);
+      console.error('[INSTANCE CREATE] Table creation error:', tableErr.message);
     }
 
     // Insert the data
@@ -231,12 +263,12 @@ app.post('/api/instance', async (c) => {
   }
 });
 
-// READ instances by stateid (uses STATES DB - online-first)
+// READ instances by stateid (uses INSTANCES DB - client syncs from this)
 app.get('/api/instance/:stateid', async (c) => {
   try {
     const stateid = c.req.param('stateid');
     const scope = c.req.query('scope') || 'shop:main';
-    const db = getStatesDbClient(c.env.STATES_DB_URL, c.env.STATES_DB_TOKEN);
+    const db = getInstancesDbClient(c.env.INSTANCES_DB_URL, c.env.INSTANCES_DB_TOKEN);
 
     const result = await db.execute({
       sql: `SELECT * FROM instance WHERE stateid = ? AND scope = ? ORDER BY ts DESC`,
@@ -250,12 +282,12 @@ app.get('/api/instance/:stateid', async (c) => {
   }
 });
 
-// UPDATE instance (uses STATES DB - online-first)
+// UPDATE instance (uses INSTANCES DB - client syncs from this)
 app.put('/api/instance/:id', async (c) => {
   try {
     const id = c.req.param('id');
     const body = await c.req.json();
-    const db = getStatesDbClient(c.env.STATES_DB_URL, c.env.STATES_DB_TOKEN);
+    const db = getInstancesDbClient(c.env.INSTANCES_DB_URL, c.env.INSTANCES_DB_TOKEN);
 
     // Build dynamic update query
     const fields: string[] = [];
@@ -287,11 +319,11 @@ app.put('/api/instance/:id', async (c) => {
   }
 });
 
-// DELETE instance (uses STATES DB - online-first)
+// DELETE instance (uses INSTANCES DB - client syncs from this)
 app.delete('/api/instance/:id', async (c) => {
   try {
     const id = c.req.param('id');
-    const db = getStatesDbClient(c.env.STATES_DB_URL, c.env.STATES_DB_TOKEN);
+    const db = getInstancesDbClient(c.env.INSTANCES_DB_URL, c.env.INSTANCES_DB_TOKEN);
 
     await db.execute({
       sql: 'DELETE FROM instance WHERE id = ?',
