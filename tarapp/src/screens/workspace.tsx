@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLiveEvents } from '@/hooks/useLiveEvents';
 
-// ─── Full TAR Opcode map for Trace screen ─────────────────────────────────
+// ─── Full TAR Opcode map for Workspace screen ─────────────────────────────
 
 const OPCODE_META: Record<number, { name: string; color: string; icon: string }> = {
   101: { name: 'STOCKIN',        color: '#34C759', icon: 'arrow-down-circle' },
@@ -63,7 +63,7 @@ function getMeta(opcode: number) {
 
 // ─── Screen ───────────────────────────────────────────────────────────────
 
-export default function LiveTracking() {
+export default function Workspace() {
   const { events, status } = useLiveEvents();
   const pulseAnim = useRef(new Animated.Value(1)).current;
 

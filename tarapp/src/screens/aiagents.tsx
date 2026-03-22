@@ -187,15 +187,15 @@ export default function AgentsScreen() {
         {renderResults()}
  
         {traces.length > 0 && (
-          <View style={styles.traceSection}>
-            <Text style={styles.traceSectionTitle}>Recent Activity</Text>
+          <View style={styles.workspaceSection}>
+            <Text style={styles.workspaceSectionTitle}>Recent Activity</Text>
             {traces.slice(0, 10).map((trace, i) => {
               const meta = getOpcodeMeta(trace.opcode);
               return (
-                <View key={i} style={styles.traceRowFlat}>
-                  <Text style={[styles.traceOpFlat, { color: meta.color }]}>{meta.name}</Text>
-                  <Text style={styles.traceTargetFlat}>{trace.streamid}</Text>
-                  <Text style={styles.traceTimeFlat}>{trace.timestamp}</Text>
+                <View key={i} style={styles.workspaceRowFlat}>
+                  <Text style={[styles.workspaceOpFlat, { color: meta.color }]}>{meta.name}</Text>
+                  <Text style={styles.workspaceTargetFlat}>{trace.streamid}</Text>
+                  <Text style={styles.workspaceTimeFlat}>{trace.timestamp}</Text>
                 </View>
               );
             })}
@@ -265,8 +265,8 @@ const styles = StyleSheet.create({
   cardPayload: { fontSize: 13, color: '#8E8E93', marginTop: 4 },
 
   // Recent Activity (Flat List)
-  traceSection: { marginTop: 40 },
-  traceSectionTitle: {
+  workspaceSection: { marginTop: 40 },
+  workspaceSectionTitle: {
     fontSize: 12,
     fontWeight: '700',
     color: '#8E8E93',
@@ -274,7 +274,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     marginBottom: 8,
   },
-  traceRowFlat: {
+  workspaceRowFlat: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -282,7 +282,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#F2F2F7',
   },
-  traceOpFlat: { fontSize: 11, fontWeight: '800', width: 90 },
-  traceTargetFlat: { fontSize: 13, fontWeight: '600', color: '#3A3A3C', flex: 1 },
-  traceTimeFlat: { fontSize: 11, color: '#AEAEB2' },
+  workspaceOpFlat: { fontSize: 11, fontWeight: '800', width: 90 },
+  workspaceTargetFlat: { fontSize: 13, fontWeight: '600', color: '#3A3A3C', flex: 1 },
+  workspaceTimeFlat: { fontSize: 11, color: '#AEAEB2' },
 });

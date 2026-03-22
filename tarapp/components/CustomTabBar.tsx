@@ -381,7 +381,7 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
         {!keyboardVisible && (
           <BlurView intensity={80} tint="light" style={styles.barContainer}>
             <View style={styles.tabRow}>
-              {/* LEFT SECTION: Toggle cluster for Trace & Memories */}
+              {/* LEFT SECTION: Toggle cluster for Workspace & Memories */}
               <View style={styles.leftSection}>
                 <View style={styles.toggleCluster}>
                   {state.routes.slice(0, 2).map((route, index) => {
@@ -455,7 +455,7 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
                   >
                     <Ionicons name="search" size={20} color="#8E8E93" />
                   </TouchableOpacity>
-                  {(() => {
+                  {isAgentsTab && (() => {
                     const route = state.routes[3];
                     const isFocused = state.index === 3;
                     const onPress = () => {
@@ -478,18 +478,20 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
                     );
                   })()}
                   
-                  <TouchableOpacity
-                    onPress={() => {
-                      if (process.env.EXPO_OS === 'ios') {
-                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      }
-                      setPickerVisible(true);
-                    }}
-                    activeOpacity={0.7}
-                    style={styles.toggleTab}
-                  >
-                    <Ionicons name="add" size={24} color="#8E8E93" />
-                  </TouchableOpacity>
+                  {!isAgentsTab && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        if (process.env.EXPO_OS === 'ios') {
+                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        }
+                        setPickerVisible(true);
+                      }}
+                      activeOpacity={0.7}
+                      style={styles.toggleTab}
+                    >
+                      <Ionicons name="add" size={24} color="#8E8E93" />
+                    </TouchableOpacity>
+                  )}
                 </View>
               </View>
             </View>

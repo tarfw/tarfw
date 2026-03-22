@@ -18,6 +18,21 @@ export interface StateTypeDef {
 
 export const STATE_TYPES: StateTypeDef[] = [
   {
+    type: 'instance',
+    label: 'Instance',
+    icon: 'cube-outline',
+    color: '#AF52DE',
+    fields: [
+      { key: 'stateid', label: 'State UCode', type: 'text', placeholder: 'product:shoe1', required: true },
+      { key: 'qty', label: 'Quantity', type: 'number', placeholder: '0' },
+      { key: 'value', label: 'Unit Price', type: 'number', placeholder: '0.00' },
+      { key: 'currency', label: 'Currency', type: 'text', placeholder: 'INR' },
+      { key: 'available', label: 'Available', type: 'boolean', placeholder: 'true' },
+      { key: 'lat', label: 'Latitude', type: 'number', placeholder: '0.000000' },
+      { key: 'lng', label: 'Longitude', type: 'number', placeholder: '0.000000' },
+    ],
+  },
+  {
     type: 'product',
     label: 'Product',
     icon: 'cube-outline',

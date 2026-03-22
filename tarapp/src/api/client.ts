@@ -24,7 +24,7 @@ export async function sendChannelMessage(req: {
   return response.json();
 }
 
-// ─── State API (direct CRUD — no trace, no instance, no broadcast) ───
+// ─── State API (direct CRUD — no workspace live stream, no instance, no broadcast) ───
 
 export async function createStateApi(ucode: string, title: string | undefined, payload: any, scope = "shop:main") {
   const response = await fetch(STATE_URL, {

@@ -1,14 +1,14 @@
 import { StyleSheet } from 'react-native';
 import { ThemedView } from '@/components/themed-view';
-import Trace from '../../src/screens/trace';
+import Workspace from '../../src/screens/workspace';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-export default function TraceScreen() {
+export default function WorkspaceScreen() {
   const insets = useSafeAreaInsets();
   
   return (
     <ThemedView style={[styles.container, { paddingTop: insets.top }]}>
-      <Trace />
+      <Workspace />
     </ThemedView>
   );
 }
