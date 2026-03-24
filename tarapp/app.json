@@ -15,7 +15,7 @@
     "android": {
       "package": "com.tarfw.tar",
       "adaptiveIcon": {
-        "backgroundColor": "#FFFFFF",
+        "backgroundColor": "#0C5027",
         "foregroundImage": "./assets/images/android-icon-foreground.png"
       },
       "edgeToEdgeEnabled": true,
@@ -34,9 +34,9 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
+          "backgroundColor": "#0C5027",
           "dark": {
-            "backgroundColor": "#000000"
+            "backgroundColor": "#0C5027"
           }
         }
       ]
