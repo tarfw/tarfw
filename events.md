@@ -256,6 +256,32 @@ CREATE INDEX idx_events_composite ON cloud_events(opcode, streamid, ts);
 | `getRecentEvents()` | Fetch events by scope |
 | `eventExists()` | Check for duplicates |
 
+### SQLite API Usage (Corrected)
+
+The DO uses the Cloudflare SQLite-backed storage API. Key points:
+
+```typescript
+// exec(query, ...bindings) returns a cursor
+const cursor = db.exec(
+  `SELECT * FROM cloud_events WHERE scope = ? ORDER BY ts DESC LIMIT ?`,
+  scope, limit
+);
+
+// Use .toArray() for multiple rows
+const rows = cursor.toArray();
+
+// Use .one() for single row (throws if 0 or >1 rows)
+const row = cursor.one();
+
+// Use .next() for iteration
+const result = cursor.next();
+if (!result.done) {
+  console.log(result.value); // row object
+}
+```
+
+**Important:** Always use parameter bindings (`?`) instead of string interpolation to prevent SQL injection and ensure proper escaping.
+
 ---
 
 ## WebSocket Live Streaming

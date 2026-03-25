@@ -556,6 +556,227 @@ app.get('/api/events/:scope', async (c) => {
   return c.json({ success: true, result: events });
 });
 
+// ─── Auth Middleware ───
+// Validates session token and checks scope access for protected routes
+
+const PUBLIC_ROUTES = [
+  '/auth/google',   // Login endpoint
+  '/auth/register', // Registration (if we add it)
+];
+
+const PUBLIC_SCOPES = [
+  'shop:main', // Default scope for development
+];
+
+app.use('*', async (c, next) => {
+  const path = c.req.path;
+  const method = c.req.method;
+  
+  // Skip auth for public routes
+  if (PUBLIC_ROUTES.some(route => path.startsWith(route))) {
+    return next();
+  }
+  
+  // Skip auth for GET /api/events/:scope (read-only, public for now)
+  // In production, you'd want to protect this too
+  if (method === 'GET' && path.startsWith('/api/events/')) {
+    return next();
+  }
+  
+  // Get auth token from header
+  const authHeader = c.req.header('Authorization');
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  
+  // For now, allow requests without token but with scope param
+  // This is for backwards compatibility during migration
+  // TODO: Make this strict after mobile app is updated
+  if (!token) {
+    // Check if scope is provided in query - allow for now
+    const scope = c.req.query('scope');
+    if (scope && PUBLIC_SCOPES.includes(scope)) {
+      console.log('[Auth] Allowing public access to scope:', scope);
+      return next();
+    }
+    
+    // Allow requests without auth header for development
+    // Remove this in production!
+    console.log('[Auth] No token, allowing (dev mode):', path);
+    return next();
+  }
+  
+  // Validate token with SessionDO
+  if (!c.env.SESSION_DO) {
+    console.error('[Auth] SESSION_DO not bound');
+    return c.json({ error: 'Auth not configured' }, 500);
+  }
+  
+  try {
+    const stub = c.env.SESSION_DO.get(c.env.SESSION_DO.idFromName('auth'));
+    const response = await stub.fetch(new Request('http://localhost/auth/me', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }));
+    
+    if (!response.ok) {
+      return c.json({ error: 'Unauthorized', message: 'Invalid or expired token' }, 401);
+    }
+    
+    const authData = await response.json() as any;
+    
+    // Attach user info to context for handlers (using Hono's set method)
+    // Note: In production, you'd want to extend the Variables type
+    // @ts-ignore - Hono set method
+    c.set('user', authData.user);
+    // @ts-ignore
+    c.set('userId', authData.user?.id);
+    // @ts-ignore
+    c.set('scopes', authData.scopes);
+    
+    // Check scope access if scope is provided
+    const scope = c.req.query('scope');
+    if (scope && !authData.scopes?.includes(scope)) {
+      return c.json({ error: 'Forbidden', message: `No access to scope: ${scope}` }, 403);
+    }
+    
+    console.log('[Auth] Validated:', authData.user?.email, 'scopes:', authData.scopes);
+    return next();
+  } catch (err: any) {
+    console.error('[Auth] Error:', err.message);
+    return c.json({ error: 'Auth error', message: err.message }, 500);
+  }
+});
+
+// ─── Auth Routes (Proxied to SessionDO) ───
+
+// POST /api/auth/google - Login with Google token
+app.post('/api/auth/google', async (c) => {
+  if (!c.env.SESSION_DO) {
+    return c.json({ error: 'SESSION_DO not bound' }, 500);
+  }
+  
+  const body = await c.req.json();
+  const stub = c.env.SESSION_DO.get(c.env.SESSION_DO.idFromName('auth'));
+  
+  const response = await stub.fetch(new Request('http://localhost/auth/google', {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: { 'Content-Type': 'application/json' }
+  }));
+  
+  const data = await response.json();
+  return new Response(JSON.stringify(data), {
+    status: response.status,
+    headers: { 'Content-Type': 'application/json' }
+  });
+});
+
+// GET /api/auth/me - Get current user
+app.get('/api/auth/me', async (c) => {
+  if (!c.env.SESSION_DO) {
+    return c.json({ error: 'SESSION_DO not bound' }, 500);
+  }
+  
+  const authHeader = c.req.header('Authorization');
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  
+  if (!token) {
+    return c.json({ error: 'No token provided' }, 401);
+  }
+  
+  const stub = c.env.SESSION_DO.get(c.env.SESSION_DO.idFromName('auth'));
+  const response = await stub.fetch(new Request('http://localhost/auth/me', {
+    headers: { 'Authorization': `Bearer ${token}` }
+  }));
+  
+  const data = await response.json();
+  return new Response(JSON.stringify(data), {
+    status: response.status,
+    headers: { 'Content-Type': 'application/json' }
+  });
+});
+
+// POST /api/auth/logout - Logout
+app.post('/api/auth/logout', async (c) => {
+  if (!c.env.SESSION_DO) {
+    return c.json({ error: 'SESSION_DO not bound' }, 500);
+  }
+  
+  const authHeader = c.req.header('Authorization');
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  
+  if (!token) {
+    return c.json({ error: 'No token provided' }, 401);
+  }
+  
+  const stub = c.env.SESSION_DO.get(c.env.SESSION_DO.idFromName('auth'));
+  const response = await stub.fetch(new Request('http://localhost/auth/logout', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${token}` }
+  }));
+  
+  const data = await response.json();
+  return new Response(JSON.stringify(data), {
+    status: response.status,
+    headers: { 'Content-Type': 'application/json' }
+  });
+});
+
+// GET /api/auth/scopes - Get user's scopes
+app.get('/api/auth/scopes', async (c) => {
+  if (!c.env.SESSION_DO) {
+    return c.json({ error: 'SESSION_DO not bound' }, 500);
+  }
+  
+  const authHeader = c.req.header('Authorization');
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  
+  if (!token) {
+    return c.json({ error: 'No token provided' }, 401);
+  }
+  
+  const stub = c.env.SESSION_DO.get(c.env.SESSION_DO.idFromName('auth'));
+  const response = await stub.fetch(new Request('http://localhost/auth/scopes', {
+    headers: { 'Authorization': `Bearer ${token}` }
+  }));
+  
+  const data = await response.json();
+  return new Response(JSON.stringify(data), {
+    status: response.status,
+    headers: { 'Content-Type': 'application/json' }
+  });
+});
+
+// POST /api/auth/scopes - Create new scope (store)
+app.post('/api/auth/scopes', async (c) => {
+  if (!c.env.SESSION_DO) {
+    return c.json({ error: 'SESSION_DO not bound' }, 500);
+  }
+  
+  const authHeader = c.req.header('Authorization');
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  
+  if (!token) {
+    return c.json({ error: 'No token provided' }, 401);
+  }
+  
+  const body = await c.req.json();
+  const stub = c.env.SESSION_DO.get(c.env.SESSION_DO.idFromName('auth'));
+  
+  const response = await stub.fetch(new Request('http://localhost/auth/scopes', {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: { 
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    }
+  }));
+  
+  const data = await response.json();
+  return new Response(JSON.stringify(data), {
+    status: response.status,
+    headers: { 'Content-Type': 'application/json' }
+  });
+});
+
 export default {
   fetch: app.fetch,
 };
@@ -563,5 +784,6 @@ export default {
 // Export Durable Objects so Wrangler can bind them
 export { OrderDO } from './do/order';
 export { TaskDO } from './do/task';
-export { ConversationDO, SessionDO } from './do/stubs';
+export { ConversationDO } from './do/stubs';
+export { SessionDO } from './do/session';
 

@@ -1,4 +1,16 @@
+import { getAuthToken } from '../auth/googleSignIn';
+
 export const API_BASE_URL = "https://taragent.wetarteam.workers.dev";
+
+// Helper to get auth headers with token
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  const token = await getAuthToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
 export const CHANNEL_URL = `${API_BASE_URL}/api/channel`;
 export const STATE_URL = `${API_BASE_URL}/api/state`;
 export const STATES_LIST_URL = `${API_BASE_URL}/api/states`;
@@ -16,9 +28,10 @@ export async function sendChannelMessage(req: {
   text?: string;
   action?: "SEARCH";
 }) {
+  const headers = await getAuthHeaders();
   const response = await fetch(CHANNEL_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(req),
   });
   if (!response.ok) throw new Error(`Channel API Error: ${response.status}`);
@@ -28,9 +41,10 @@ export async function sendChannelMessage(req: {
 // ─── State API (direct CRUD — no workspace live stream, no instance, no broadcast) ───
 
 export async function createStateApi(ucode: string, title: string | undefined, payload: any, scope = "shop:main") {
+  const headers = await getAuthHeaders();
   const response = await fetch(STATE_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify({ ucode, title, payload, scope }),
   });
   if (!response.ok) throw new Error(`State CREATE Error: ${response.status}`);
@@ -41,20 +55,20 @@ export async function createStateApi(ucode: string, title: string | undefined, p
 export async function listStatesApi(scope = "shop:main", type?: string, limit = 50) {
   const params = new URLSearchParams({ scope });
   if (type) params.set('type', type);
-  params.set('limit', limit.toString());
-  
-  const response = await fetch(`${STATES_LIST_URL}?${params.toString()}`, {
+  params.set('limit', limit.toString());    const headers = await getAuthHeaders();
+    const response = await fetch(`${STATES_LIST_URL}?${params.toString()}`, {
     method: "GET",
-    headers: { "Content-Type": "application/json" },
+    headers,
   });
   if (!response.ok) throw new Error(`States LIST Error: ${response.status}`);
   return response.json();
 }
 
 export async function updateStateApi(ucode: string, title: string | undefined, payload: any, scope = "shop:main") {
+  const headers = await getAuthHeaders();
   const response = await fetch(`${STATE_URL}/${encodeURIComponent(ucode)}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify({ title, payload, scope }),
   });
   if (!response.ok) throw new Error(`State UPDATE Error: ${response.status}`);
@@ -62,15 +76,17 @@ export async function updateStateApi(ucode: string, title: string | undefined, p
 }
 
 export async function deleteStateApi(ucode: string, scope = "shop:main") {
+  const headers = await getAuthHeaders();
   const response = await fetch(
     `${STATE_URL}/${encodeURIComponent(ucode)}?scope=${encodeURIComponent(scope)}`,
-    { method: "DELETE" }
+    { method: "DELETE", headers }
   );
   if (!response.ok) throw new Error(`State DELETE Error: ${response.status}`);
   return response.json();
 }
 
 export async function readStateApi(ucode: string, scope = "shop:main") {
+  const headers = await getAuthHeaders();
   const response = await fetch(
     `${STATE_URL}/${encodeURIComponent(ucode)}?scope=${encodeURIComponent(scope)}`
   );
@@ -81,9 +97,10 @@ export async function readStateApi(ucode: string, scope = "shop:main") {
 // ─── Embedding API (mobile sends local embeddings to remote) ───
 
 export async function upsertEmbeddingApi(stateId: string, vector: number[]) {
+  const headers = await getAuthHeaders();
   const response = await fetch(STATEAI_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify({ stateId, vector }),
   });
   if (!response.ok) throw new Error(`Embedding UPSERT Error: ${response.status}`);
@@ -93,9 +110,10 @@ export async function upsertEmbeddingApi(stateId: string, vector: number[]) {
 // ─── Server-side Search API (optional - mobile can also search locally) ───
 
 export async function searchServerApi(vector: number[], scope = "shop:main", limit = 10) {
+  const headers = await getAuthHeaders();
   const response = await fetch(SEARCH_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify({ vector, scope, limit }),
   });
   if (!response.ok) throw new Error(`Search Error: ${response.status}`);
@@ -122,9 +140,10 @@ export interface InstanceData {
 }
 
 export async function createInstanceApi(data: InstanceData) {
+  const headers = await getAuthHeaders();
   const response = await fetch(INSTANCE_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(data),
   });
   if (!response.ok) throw new Error(`Instance CREATE Error: ${response.status}`);
@@ -132,17 +151,20 @@ export async function createInstanceApi(data: InstanceData) {
 }
 
 export async function getInstancesByStateApi(stateid: string, scope = "shop:main") {
+  const headers = await getAuthHeaders();
   const response = await fetch(
-    `${INSTANCE_URL}/${encodeURIComponent(stateid)}?scope=${encodeURIComponent(scope)}`
+    `${INSTANCE_URL}/${encodeURIComponent(stateid)}?scope=${encodeURIComponent(scope)}`,
+    { headers }
   );
   if (!response.ok) throw new Error(`Instance READ Error: ${response.status}`);
   return response.json();
 }
 
 export async function updateInstanceApi(id: string, data: Partial<InstanceData>) {
+  const headers = await getAuthHeaders();
   const response = await fetch(`${INSTANCE_URL}/${encodeURIComponent(id)}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(data),
   });
   if (!response.ok) throw new Error(`Instance UPDATE Error: ${response.status}`);
@@ -150,8 +172,10 @@ export async function updateInstanceApi(id: string, data: Partial<InstanceData>)
 }
 
 export async function deleteInstanceApi(id: string) {
+  const headers = await getAuthHeaders();
   const response = await fetch(`${INSTANCE_URL}/${encodeURIComponent(id)}`, {
     method: "DELETE",
+    headers,
   });
   if (!response.ok) throw new Error(`Instance DELETE Error: ${response.status}`);
   return response.json();
@@ -160,9 +184,10 @@ export async function deleteInstanceApi(id: string) {
 // ─── Cloud Events API (fetch persisted events from DO SQLite) ───
 
 export async function getCloudEventsApi(scope = "shop:main", limit = 50) {
+  const headers = await getAuthHeaders();
   const response = await fetch(`${CLOUD_EVENTS_URL}/${scope}?limit=${limit}`, {
     method: "GET",
-    headers: { "Content-Type": "application/json" },
+    headers,
   });
   if (!response.ok) throw new Error(`Cloud Events Error: ${response.status}`);
   return response.json();

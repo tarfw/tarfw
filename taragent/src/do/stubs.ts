@@ -7,9 +7,6 @@ export class ConversationDO extends DurableObject {
     }
 }
 
-export class SessionDO extends DurableObject {
-    async fetch(request: Request): Promise<Response> {
-        // Simple stub for frontend user session handling
-        return new Response('Session DO active');
-    }
-}
+// SessionDO is now implemented in session.ts
+// Re-export for backwards compatibility
+export { SessionDO } from './session';

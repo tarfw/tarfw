@@ -4,7 +4,7 @@
     "slug": "tar",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/icon.jpg",
     "scheme": "tarapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -14,16 +14,17 @@
     },
     "android": {
       "package": "com.tarfw.tar",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#0C5027",
-        "foregroundImage": "./assets/images/android-icon-foreground.png"
+        "foregroundImage": "./assets/images/android-icon-foreground.jpg"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/favicon.jpg"
     },
     "plugins": [
       "expo-router",
@@ -31,7 +32,7 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/images/splash-icon.jpg",
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#0C5027",
@@ -39,7 +40,22 @@
             "backgroundColor": "#0C5027"
           }
         }
-      ]
+      ],
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosClientId": "291840005173-dqgbihtc6e9q9rq94r17la3d213imb2t.apps.googleusercontent.com",
+          "androidClientId": "291840005173-dqgbihtc6e9q9rq94r17la3d213imb2t.apps.googleusercontent.com",
+          "scopes": [
+            "profile",
+            "email"
+          ],
+          "iosUrlScheme": "com.googleusercontent.apps.291840005173-dqgbihtc6e9q9rq94r17la3d213imb2t",
+          "webClientId": "291840005173-dqgbihtc6e9q9rq94r17la3d213imb2t.apps.googleusercontent.com"
+        }
+      ],
+      "expo-asset",
+      "expo-build-properties"
     ],
     "experiments": {
       "typedRoutes": true,
