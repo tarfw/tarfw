@@ -108,11 +108,22 @@ export default function Workspace() {
         ) : (
           events.map((ev, index) => {
             const meta = getMeta(ev.opcode);
+            // For task events (opcode 301-311), show title instead of streamid
+            const displayText = (ev.opcode >= 301 && ev.opcode <= 311 && ev.title) 
+              ? ev.title 
+              : ev.streamid;
+            
+            // Local events (tasks from events.db) get light green background
+            const isLocalEvent = ev.source === 'local';
+            
             return (
-              <View key={index} style={styles.flatRow}>
+              <View key={index} style={[
+                styles.flatRow,
+                isLocalEvent && styles.localEventRow
+              ]}>
                 <View style={styles.flatCol}>
                   <Text style={[styles.flatOpName, { color: meta.color }]}>{meta.name}</Text>
-                  <Text style={styles.flatStreamId}>{ev.streamid}</Text>
+                  <Text style={styles.flatStreamId}>{displayText}</Text>
                 </View>
                 <View style={styles.flatRight}>
                   <Text style={styles.flatTime}>{ev.timestamp}</Text>
@@ -163,8 +174,8 @@ const styles = StyleSheet.create({
   },
   statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
   statusText: { fontSize: 12, fontWeight: '600', color: '#3A3A3C' },
-  list: { paddingHorizontal: 20, paddingVertical: 10, flexGrow: 1 },
-  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 100 },
+  list: { paddingVertical: 10, flexGrow: 1 },
+  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 100, paddingHorizontal: 20 },
   emptyText: { fontSize: 16, fontWeight: '700', color: '#1C1C1E' },
   emptySubText: { fontSize: 13, color: '#8E8E93', marginTop: 4, textAlign: 'center' },
   
@@ -174,8 +185,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: 14,
+    paddingHorizontal: 20,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#E5E5EA',
+  },
+  // Local event (task) - very light green background
+  localEventRow: {
+    backgroundColor: '#E8F5E9', // Very light green for local tasks
   },
   flatCol: { flex: 1 },
   flatOpName: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },

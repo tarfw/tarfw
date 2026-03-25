@@ -449,6 +449,72 @@ app.post('/api/channel', async (c) => {
   }
 });
 
+// ─── /api/event — Test endpoint to emit sample cloud events ───
+
+const SampleEventSchema = z.object({
+  opcode: z.number().min(101).max(999),
+  streamid: z.string(),
+  delta: z.number().default(1),
+  payload: z.record(z.any()).optional(),
+  scope: z.string().default('shop:main'),
+});
+
+// Emit a sample event to all connected WebSocket clients
+app.post('/api/event', async (c) => {
+  try {
+    const body = await c.req.json();
+    const parsed = SampleEventSchema.safeParse(body);
+    if (!parsed.success) return c.json({ error: 'Invalid payload', details: parsed.error.errors }, 400);
+
+    const { opcode, streamid, delta, payload, scope } = parsed.data;
+    
+    // Get the OrderDO for this scope
+    if (!c.env.ORDER_DO) {
+      return c.json({ error: 'ORDER_DO not bound' }, 500);
+    }
+    
+    const id = c.env.ORDER_DO.idFromName(scope);
+    const stub = c.env.ORDER_DO.get(id);
+    
+    // Create the event object - include scope
+    const event = {
+      opcode,
+      streamid,
+      delta,
+      payload: payload || {},
+      scope, // Include scope in the event
+      timestamp: new Date().toISOString(),
+    };
+    
+    // POST to the DO - use /api/events path for proper handling
+    const doUrl = `http://localhost/api/events?limit=1&scope=${scope}`;
+    console.log('[API /event] Calling DO at:', doUrl);
+    console.log('[API /event] Event payload:', event);
+    
+    const response = await stub.fetch(new Request(doUrl, {
+      method: 'POST',
+      body: JSON.stringify(event),
+    }));
+    
+    const responseText = await response.text();
+    console.log('[API /event] DO response:', response.status, responseText);
+    
+    console.log('[SAMPLE EVENT] Broadcast:', event);
+    
+    return c.json({ 
+      success: true, 
+      result: { 
+        emitted: true, 
+        event,
+        scope 
+      } 
+    }, 201);
+  } catch (err: any) {
+    console.error('Sample event error:', err);
+    return c.json({ error: err.message }, 500);
+  }
+});
+
 // WebSocket Live Tracking Route
 app.get('/api/live/:scope', async (c) => {
   const scope = c.req.param('scope');
@@ -460,6 +526,34 @@ app.get('/api/live/:scope', async (c) => {
   const stub = c.env.ORDER_DO.get(id);
   
   return stub.fetch(c.req.raw);
+});
+
+// ─── /api/events/:scope — Get persisted cloud events from DO SQLite ───
+app.get('/api/events/:scope', async (c) => {
+  const scope = c.req.param('scope');
+  const limit = parseInt(c.req.query('limit') || '50');
+  
+  if (!c.env.ORDER_DO) {
+    return c.json({ error: 'ORDER_DO not bound' }, 500);
+  }
+  
+  const id = c.env.ORDER_DO.idFromName(scope);
+  const stub = c.env.ORDER_DO.get(id);
+  
+  // Call DO to get recent events - pass scope as query param
+  const response = await stub.fetch(new Request(`http://localhost/api/events?limit=${limit}&scope=${scope}`, {
+    method: 'GET',
+  }));
+  
+  // Check for errors from DO
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('[API /events] DO returned error:', response.status, errorText);
+    return c.json({ error: 'DO error', details: errorText }, 500);
+  }
+  
+  const events = await response.json();
+  return c.json({ success: true, result: events });
 });
 
 export default {

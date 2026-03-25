@@ -5,6 +5,7 @@ export const STATES_LIST_URL = `${API_BASE_URL}/api/states`;
 export const STATEAI_URL = `${API_BASE_URL}/api/stateai`;
 export const SEARCH_URL = `${API_BASE_URL}/api/search`;
 export const INSTANCE_URL = `${API_BASE_URL}/api/instance`;
+export const CLOUD_EVENTS_URL = `${API_BASE_URL}/api/events`;
 
 // ─── Channel API (natural language + search only) ───
 
@@ -153,5 +154,16 @@ export async function deleteInstanceApi(id: string) {
     method: "DELETE",
   });
   if (!response.ok) throw new Error(`Instance DELETE Error: ${response.status}`);
+  return response.json();
+}
+
+// ─── Cloud Events API (fetch persisted events from DO SQLite) ───
+
+export async function getCloudEventsApi(scope = "shop:main", limit = 50) {
+  const response = await fetch(`${CLOUD_EVENTS_URL}/${scope}?limit=${limit}`, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+  });
+  if (!response.ok) throw new Error(`Cloud Events Error: ${response.status}`);
   return response.json();
 }
