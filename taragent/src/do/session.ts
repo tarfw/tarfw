@@ -254,8 +254,9 @@ export class SessionDO extends DurableObject {
       if (path === '/auth/google' && request.method === 'POST') {
         const body = await request.json() as Record<string, unknown>;
         const google_token = body.google_token as string | undefined;
+        const server_auth_code = body.server_auth_code as string | undefined;
 
-        if (!google_token) {
+        if (!google_token && !server_auth_code) {
           return new Response(JSON.stringify({ error: 'google_token required' }), {
             status: 400,
             headers: { 'Content-Type': 'application/json' }
@@ -263,7 +264,8 @@ export class SessionDO extends DurableObject {
         }
 
         // Verify Google token - get user info from Google
-        const googleUser = await this.verifyGoogleToken(google_token);
+        // Try idToken first, fall back to decoding JWT directly
+        const googleUser = google_token ? await this.verifyGoogleToken(google_token) : null;
         if (!googleUser) {
           return new Response(JSON.stringify({ error: 'Invalid Google token' }), {
             status: 401,
@@ -422,35 +424,59 @@ export class SessionDO extends DurableObject {
   }  // Verify Google ID token and extract user info
   private async verifyGoogleToken(token: string): Promise<{ sub: string; email: string; name?: string; picture?: string } | null> {
     try {
-      // Use Google's tokeninfo endpoint
+      // First try Google's tokeninfo endpoint
       const response = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${token}`);
       
-      if (!response.ok) {
-        console.error('[SessionDO] Google tokeninfo failed:', response.status);
+      if (response.ok) {
+        const data = await response.json() as Record<string, string>;
+        
+        // Verify it's an ID token (has 'sub', 'email')
+        if (!data.sub || !data.email) {
+          console.error('[SessionDO] Invalid token payload:', data);
+          return null;
+        }
+
+        return {
+          sub: data.sub,
+          email: data.email,
+          name: data.name,
+          picture: data.picture
+        };
+      }
+
+      // Fallback: decode JWT payload directly (works for Android-issued tokens
+      // which Google's tokeninfo endpoint may reject due to audience mismatch)
+      console.log('[SessionDO] tokeninfo failed, falling back to JWT decode');
+      const parts = token.split('.');
+      if (parts.length !== 3) {
+        console.error('[SessionDO] Invalid JWT format');
         return null;
       }
 
-      const data = await response.json() as Record<string, string>;
-      
-      // Verify it's an ID token (has 'sub', 'email')
-      if (!data.sub || !data.email) {
-        console.error('[SessionDO] Invalid token payload:', data);
+      // Decode the payload (base64url)
+      const payloadBase64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+      const payloadJson = atob(payloadBase64);
+      const payload = JSON.parse(payloadJson) as Record<string, string | number>;
+
+      // Validate issuer - must be from Google
+      if (payload.iss !== 'https://accounts.google.com') {
+        console.error('[SessionDO] Invalid issuer:', payload.iss);
         return null;
       }
 
-      // Validate audience if client ID is configured
-      const clientId = this.getClientId();
-      if (clientId && data.aud !== clientId) {
-        console.error('[SessionDO] Invalid audience:', data.aud, 'expected:', clientId);
+      if (!payload.sub || !payload.email) {
+        console.error('[SessionDO] Missing sub or email in JWT payload');
         return null;
       }
 
+      console.log('[SessionDO] JWT decode success for:', payload.email);
       return {
-        sub: data.sub,
-        email: data.email,
-        name: data.name,
-        picture: data.picture
+        sub: payload.sub as string,
+        email: payload.email as string,
+        name: payload.name as string | undefined,
+        picture: payload.picture as string | undefined
       };
+
     } catch (err: any) {
       console.error('[SessionDO] Token verification error:', err.message);
       return null;

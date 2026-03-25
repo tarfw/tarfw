@@ -1,8 +1,9 @@
 import React from 'react';
 import { View, Text, StyleSheet, SafeAreaView, Alert } from 'react-native';
-import { GoogleSigninButton } from '@react-native-google-signin/google-signin';
 import { useAuth } from '../hooks/useAuth';
 import { router } from 'expo-router';
+import { TouchableOpacity, ActivityIndicator } from 'react-native';
+import { FontAwesome } from '@expo/vector-icons';
 
 export default function LoginScreen() {
   const { signIn, isLoading, isSignedIn } = useAuth();
@@ -17,7 +18,8 @@ export default function LoginScreen() {
   const handleSignIn = async () => {
     try {
       await signIn();
-      // After successful sign in, router should redirect
+      // Explicitly navigate after success (safety net alongside the useEffect)
+      router.replace('/(tabs)');
     } catch (error: any) {
       Alert.alert(
         'Sign In Failed',
@@ -46,15 +48,21 @@ export default function LoginScreen() {
 
         {/* Sign In Button */}
         <View style={styles.buttonContainer}>
-          <GoogleSigninButton
-            size={GoogleSigninButton.Size.Wide}
-            color={GoogleSigninButton.Color.Light}
+          <TouchableOpacity 
+            style={[styles.customButton, isLoading && styles.buttonDisabled]} 
             onPress={handleSignIn}
             disabled={isLoading}
-          />
-          {isLoading && (
-            <Text style={styles.loadingText}>Signing in...</Text>
-          )}
+            activeOpacity={0.8}
+          >
+            {isLoading ? (
+              <ActivityIndicator color="#1C1C1E" />
+            ) : (
+              <View style={styles.buttonContent}>
+                <FontAwesome name="google" size={20} color="#1C1C1E" style={styles.buttonIcon} />
+                <Text style={styles.buttonText}>Continue with Google</Text>
+              </View>
+            )}
+          </TouchableOpacity>
         </View>
 
         {/* Terms */}
@@ -112,13 +120,37 @@ const styles = StyleSheet.create({
   },
   buttonContainer: {
     width: '100%',
-    alignItems: 'center',
+    paddingHorizontal: 24,
     marginBottom: 32,
   },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 14,
-    color: '#8E8E93',
+  customButton: {
+    backgroundColor: '#FFFFFF',
+    height: 56,
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    // Flat design
+    elevation: 0,
+    shadowColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#E5E5EA',
+  },
+  buttonDisabled: {
+    opacity: 0.6,
+  },
+  buttonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  buttonIcon: {
+    marginRight: 12,
+  },
+  buttonText: {
+    color: '#1C1C1E',
+    fontSize: 17,
+    fontWeight: '600',
+    letterSpacing: -0.2,
   },
   termsText: {
     fontSize: 12,

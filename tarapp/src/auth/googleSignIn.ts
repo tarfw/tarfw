@@ -26,7 +26,7 @@ export interface AuthState {
 // Initialize Google Sign-In with the client ID from app.json
 export function configureGoogleSignIn() {
   GoogleSignin.configure({
-    webClientId: '291840005173-dqgbihtc6e9q9rq94r17la3d213imb2t.apps.googleusercontent.com',
+    webClientId: '291840005173-g572mhgipfla7qq1k9ugnt5fpnir47en.apps.googleusercontent.com',
     offlineAccess: true,
     scopes: ['profile', 'email'],
   });
@@ -38,22 +38,41 @@ export async function signInWithGoogle(): Promise<AuthState> {
     // Check if device supports Google Play Services
     await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
 
-    // Get the Google ID token
-    const signInResult = await GoogleSignin.signIn();
-    // The result has idToken property - cast to access it
-    const idToken = (signInResult as Record<string, unknown>).idToken as string | undefined;
+    // Sign out any cached session first to ensure a fresh token is issued
+    try { await GoogleSignin.signOut(); } catch (e) { /* ignore */ }
 
-    if (!idToken) {
-      throw new Error('No ID token received from Google');
+    // Get user info from Google Sign-In
+    // According to official docs, the response has a 'data' property containing idToken
+    const { data } = await GoogleSignin.signIn();
+    
+    // Log for debugging
+    console.log('Google signIn data:', JSON.stringify(data));
+    
+    // Extract idToken from the data object
+    const idToken = data?.idToken;
+    const serverAuthCode = data?.serverAuthCode;
+    
+    console.log('idToken:', idToken ? 'present' : 'missing');
+    console.log('serverAuthCode:', serverAuthCode || 'missing');
+
+    if (!idToken && !serverAuthCode) {
+      throw new Error('No ID token or server auth code received from Google');
     }
 
+    const authCredential = idToken || serverAuthCode;
+    const isServerAuthCode = !idToken && !!serverAuthCode;
+
     // Send the token to our backend to validate and create a session
+    const requestBody = isServerAuthCode 
+      ? { server_auth_code: serverAuthCode } 
+      : { google_token: authCredential };
+      
     const response = await fetch(`${AUTH_API_BASE}/api/auth/google`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ google_token: idToken }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {
@@ -77,6 +96,15 @@ export async function signInWithGoogle(): Promise<AuthState> {
   } catch (error: any) {
     console.error('Google Sign-In error:', error);
     
+    // Attempt cleanup on failure so it's fresh next time
+    try {
+      await GoogleSignin.signOut();
+      await SecureStore.deleteItemAsync(TOKEN_KEY);
+      await SecureStore.deleteItemAsync(USER_KEY);
+    } catch (e) {
+      // Ignore cleanup errors
+    }
+    
     // Handle specific error codes
     if (error.code === statusCodes.SIGN_IN_CANCELLED) {
       throw new Error('Sign-in was cancelled');
@@ -92,70 +120,51 @@ export async function signInWithGoogle(): Promise<AuthState> {
 
 // Sign out from Google and backend
 export async function signOut(): Promise<void> {
+  // Always clear local storage first, regardless of network errors
+  try { await SecureStore.deleteItemAsync(TOKEN_KEY); } catch (e) {}
+  try { await SecureStore.deleteItemAsync(USER_KEY); } catch (e) {}
+  try { await GoogleSignin.signOut(); } catch (e) {}
+
+  // Best-effort backend session invalidation
   try {
-    // Clear backend session
     const token = await SecureStore.getItemAsync(TOKEN_KEY);
     if (token) {
-      try {
-        await fetch(`${AUTH_API_BASE}/api/auth/logout`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-        });
-      } catch (e) {
-        // Ignore logout errors - token might be expired
-      }
+      await fetch(`${AUTH_API_BASE}/api/auth/logout`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
     }
-
-    // Sign out from Google
-    await GoogleSignin.signOut();
-
-    // Clear local storage
-    await SecureStore.deleteItemAsync(TOKEN_KEY);
-    await SecureStore.deleteItemAsync(USER_KEY);
-  } catch (error) {
-    console.error('Sign out error:', error);
-    throw error;
+  } catch (e) {
+    // Ignore - local session is already cleared
   }
 }
 
-// Check if user is already signed in (restore session)
+// Check if user is already signed in (restore session from SecureStore)
 export async function restoreSession(): Promise<AuthState | null> {
   try {
     const token = await SecureStore.getItemAsync(TOKEN_KEY);
     const userJson = await SecureStore.getItemAsync(USER_KEY);
 
     if (!token || !userJson) {
+      console.log('[Auth] No stored session found');
       return null;
     }
 
-    // Validate token with backend
-    const response = await fetch(`${AUTH_API_BASE}/api/auth/me`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
-    });
-
-    if (!response.ok) {
-      // Token expired, clear session
-      await SecureStore.deleteItemAsync(TOKEN_KEY);
-      await SecureStore.deleteItemAsync(USER_KEY);
-      return null;
-    }
-
-    const authData = await response.json();
+    const user: AuthUser = JSON.parse(userJson);
+    console.log('[Auth] Restored session for:', user.email);
 
     return {
       isLoading: false,
       isSignedIn: true,
-      user: authData.user,
+      user,
       token,
-      scopes: authData.scopes || [],
+      scopes: [],
     };
   } catch (error) {
-    console.error('Restore session error:', error);
+    console.error('[Auth] Restore session error:', error);
+    // Clear corrupted data
+    try { await SecureStore.deleteItemAsync(TOKEN_KEY); } catch (e) {}
+    try { await SecureStore.deleteItemAsync(USER_KEY); } catch (e) {}
     return null;
   }
 }

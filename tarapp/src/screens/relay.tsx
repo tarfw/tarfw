@@ -1,6 +1,17 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Alert, Platform } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Pressable,
+  Alert,
+  Platform,
+  Image,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useAuth } from '@/hooks/useAuth';
+import { router } from 'expo-router';
 
 const CHANNELS = [
   {
@@ -20,186 +31,292 @@ const CHANNELS = [
 ];
 
 export default function RelayScreen() {
-  const handleCopy = (text: string) => {
-    Alert.alert("Endpoint Copied", "The API channel URL has been copied to your clipboard.");
+  const { signOut, user } = useAuth();
+
+  const handleCopy = (url: string) => {
+    Alert.alert('Endpoint Copied', 'The API channel URL has been copied to your clipboard.');
+  };
+
+  const handleSignOut = () => {
+    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign Out',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await signOut();
+            router.replace('/login');
+          } catch {
+            Alert.alert('Error', 'Failed to sign out');
+          }
+        },
+      },
+    ]);
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Relay</Text>
-        <Text style={styles.headerSub}>Connect your external channels to the TAR framework</Text>
+    <View style={s.screen}>
+      <View style={s.header}>
+        <Text style={s.headerTitle}>Relay</Text>
+        <Text style={s.headerSub}>Connect external channels to TAR</Text>
       </View>
 
-      <ScrollView contentContainerStyle={styles.listContent}>
-        {CHANNELS.map((item) => (
-          <Pressable 
-            key={item.id}
-            style={({pressed}) => [
-              styles.card, 
-              pressed && styles.cardPressed
-            ]}
-            onPress={() => handleCopy(item.url)}
-          >
-            <View style={styles.cardHeader}>
-              <View style={[styles.iconBox, { backgroundColor: item.color }]}>
-                <Ionicons name={item.icon} size={24} color="#FFF" />
-              </View>
-              <View style={styles.itemInfo}>
-                <Text style={styles.itemTitle}>{item.title}</Text>
-                <View style={styles.statusTag}>
-                  <View style={styles.statusDot} />
-                  <Text style={styles.statusText}>Active</Text>
+      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+        {/* ─── CHANNELS ─── */}
+        <Text style={s.sectionLabel}>CHANNELS</Text>
+
+        <View style={s.card}>
+          {CHANNELS.map((ch, i) => (
+            <Pressable key={ch.id} onPress={() => handleCopy(ch.url)}>
+              {({ pressed }) => (
+                <View style={[s.row, pressed && s.rowPressed, i > 0 && s.rowBorder]}>
+                  {/* icon */}
+                  <View style={[s.channelIcon, { backgroundColor: ch.color }]}>
+                    <Ionicons name={ch.icon} size={18} color="#fff" />
+                  </View>
+
+                  {/* text */}
+                  <View style={s.rowText}>
+                    <Text style={s.rowTitle}>{ch.title}</Text>
+                    <Text style={s.rowSub} numberOfLines={1}>{ch.url}</Text>
+                  </View>
+
+                  {/* action */}
+                  <Ionicons name="copy-outline" size={17} color="#C7C7CC" />
                 </View>
+              )}
+            </Pressable>
+          ))}
+        </View>
+
+        <Pressable style={s.addBtn}>
+          {({ pressed }) => (
+            <View style={[s.addBtnInner, pressed && { opacity: 0.6 }]}>
+              <Ionicons name="add" size={18} color="#0C5027" />
+              <Text style={s.addBtnText}>Add Channel</Text>
+            </View>
+          )}
+        </Pressable>
+
+        {/* ─── ACCOUNT ─── */}
+        <Text style={s.sectionLabel}>ACCOUNT</Text>
+
+        {/* User profile card */}
+        {user && (
+          <View style={s.profileCard}>
+            {/* avatar + name */}
+            <View style={s.profileRow}>
+              {user.picture ? (
+                <Image source={{ uri: user.picture }} style={s.avatar} />
+              ) : (
+                <View style={s.avatarPlaceholder}>
+                  <Text style={s.avatarInitial}>
+                    {(user.name ?? user.email).charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+              )}
+              <View style={s.profileText}>
+                <Text style={s.profileName}>{user.name ?? 'User'}</Text>
+                <Text style={s.profileEmail}>{user.email}</Text>
               </View>
-              <Ionicons name="copy-outline" size={20} color="#AEAEB2" />
             </View>
 
-            <View style={styles.divider} />
-
-            <View style={styles.urlContainer}>
-              <Text style={styles.urlLabel}>ENDPOINT URL</Text>
-              <Text style={styles.itemUrl} numberOfLines={1} ellipsizeMode="tail">
-                {item.url}
-              </Text>
+            {/* user id */}
+            <View style={s.idRow}>
+              <Text style={s.idText}>ID: {user.id}</Text>
             </View>
-          </Pressable>
-        ))}
-        
-        {/* Placeholder for adding more items */}
-        <Pressable style={styles.addCard}>
-          <Ionicons name="add-circle-outline" size={24} color="#ACACAC" />
-          <Text style={styles.addCardText}>Configure New Channel</Text>
+          </View>
+        )}
+
+        {/* Sign out */}
+        <Pressable onPress={handleSignOut}>
+          {({ pressed }) => (
+            <View style={[s.signOutBtn, pressed && s.signOutPressed]}>
+              <Ionicons name="log-out-outline" size={19} color="#FF3B30" />
+              <Text style={s.signOutText}>Sign Out</Text>
+            </View>
+          )}
         </Pressable>
       </ScrollView>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
+const s = StyleSheet.create({
+  screen: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#fff',
   },
   header: {
     paddingHorizontal: 24,
-    paddingTop: 10,
-    paddingBottom: 24,
+    paddingTop: 14,
+    paddingBottom: 20,
   },
   headerTitle: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: '800',
-    color: '#1C1C1E',
-    letterSpacing: -0.5,
+    color: '#111',
+    letterSpacing: -0.4,
   },
   headerSub: {
-    fontSize: 15,
-    color: '#8E8E93',
-    marginTop: 4,
-    lineHeight: 20,
+    fontSize: 14,
+    color: '#888',
+    marginTop: 2,
   },
-  listContent: {
+  scroll: {
     paddingHorizontal: 20,
-    paddingBottom: 60,
-    gap: 16,
+    paddingBottom: 48,
   },
+
+  /* Section label */
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#AEAEB2',
+    letterSpacing: 1.2,
+    marginBottom: 8,
+    paddingLeft: 2,
+  },
+
+  /* Channel card */
   card: {
-    backgroundColor: '#F8F8F8',
-    borderRadius: 20,
-    padding: 20,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#E5E5EA',
+    backgroundColor: '#F7F7F7',
+    borderRadius: 18,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#EBEBEB',
+    marginBottom: 8,
   },
-  cardPressed: {
-    backgroundColor: '#F2F2F7',
-    transform: [{ scale: 0.98 }],
-  },
-  cardHeader: {
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    backgroundColor: '#F7F7F7',
   },
-  iconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
+  rowBorder: {
+    borderTopWidth: 1,
+    borderTopColor: '#EBEBEB',
+  },
+  rowPressed: {
+    backgroundColor: '#EFEFEF',
+  },
+  channelIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    marginRight: 14,
   },
-  itemInfo: {
+  rowText: {
     flex: 1,
   },
-  itemTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1C1C1E',
-    marginBottom: 4,
-  },
-  statusTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#34C75915',
-    alignSelf: 'flex-start',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#34C759',
-    marginRight: 6,
-  },
-  statusText: {
-    fontSize: 12,
+  rowTitle: {
+    fontSize: 15,
     fontWeight: '600',
-    color: '#34C759',
+    color: '#1C1C1E',
   },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: '#E5E5EA',
-    marginBottom: 16,
+  rowSub: {
+    fontSize: 11,
+    color: '#999',
+    marginTop: 2,
   },
-  urlContainer: {
-    backgroundColor: '#FFF',
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#E5E5EA',
+
+  /* Add channel */
+  addBtn: {
+    marginBottom: 28,
   },
-  urlLabel: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#AEAEB2',
-    marginBottom: 4,
-    letterSpacing: 0.5,
-  },
-  itemUrl: {
-    fontSize: 13,
-    color: '#48484A',
-    fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }),
-  },
-  addCard: {
+  addBtnInner: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 20,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
-    borderStyle: 'dashed',
-    marginTop: 8,
-    gap: 10,
+    gap: 6,
+    paddingVertical: 12,
   },
-  addCardText: {
+  addBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0C5027',
+  },
+
+  /* Profile card */
+  profileCard: {
+    backgroundColor: '#F7F7F7',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#EBEBEB',
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  profileRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+  },
+  avatar: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    marginRight: 14,
+  },
+  avatarPlaceholder: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: '#DDDDF0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 14,
+  },
+  avatarInitial: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#5555AA',
+  },
+  profileText: {
+    flex: 1,
+  },
+  profileName: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#111',
+  },
+  profileEmail: {
+    fontSize: 13,
+    color: '#666',
+    marginTop: 1,
+  },
+  idRow: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#EBEBEB',
+    backgroundColor: '#fff',
+  },
+  idText: {
+    fontSize: 11,
+    color: '#999',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+
+  /* Sign out */
+  signOutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#FFF4F3',
+    borderRadius: 16,
+    paddingVertical: 15,
+  },
+  signOutPressed: {
+    backgroundColor: '#FFE5E3',
+  },
+  signOutText: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#8E8E93',
+    fontWeight: '700',
+    color: '#FF3B30',
   },
 });

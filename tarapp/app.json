@@ -44,14 +44,14 @@
       [
         "@react-native-google-signin/google-signin",
         {
-          "iosClientId": "291840005173-dqgbihtc6e9q9rq94r17la3d213imb2t.apps.googleusercontent.com",
+          "iosClientId": "291840005173-g572mhgipfla7qq1k9ugnt5fpnir47en.apps.googleusercontent.com",
           "androidClientId": "291840005173-dqgbihtc6e9q9rq94r17la3d213imb2t.apps.googleusercontent.com",
           "scopes": [
             "profile",
             "email"
           ],
-          "iosUrlScheme": "com.googleusercontent.apps.291840005173-dqgbihtc6e9q9rq94r17la3d213imb2t",
-          "webClientId": "291840005173-dqgbihtc6e9q9rq94r17la3d213imb2t.apps.googleusercontent.com"
+          "iosUrlScheme": "com.googleusercontent.apps.291840005173-g572mhgipfla7qq1k9ugnt5fpnir47en",
+          "webClientId": "291840005173-g572mhgipfla7qq1k9ugnt5fpnir47en.apps.googleusercontent.com"
         }
       ],
       "expo-asset",

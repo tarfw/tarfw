@@ -33,14 +33,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     scopes: [],
   });
 
-  // Initialize Google Sign-In and restore session on mount
+  // Initialize Google Sign-In and restore session
   useEffect(() => {
     const initAuth = async () => {
       configureGoogleSignIn();
       
-      // Try to restore existing session
       const savedSession = await restoreSession();
-      
       if (savedSession) {
         setAuthState(savedSession);
       } else {
@@ -56,7 +54,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     
     try {
       const result = await signInWithGoogle();
+      console.log('[Auth] signInWithGoogle result:', result.isSignedIn, result.user?.email);
       setAuthState(result);
+      console.log('[Auth] setState called with isSignedIn:', result.isSignedIn);
     } catch (error) {
       console.error('Sign in failed:', error);
       setAuthState(prev => ({ ...prev, isLoading: false }));
