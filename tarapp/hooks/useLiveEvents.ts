@@ -2,7 +2,8 @@ import { useEffect, useState, useRef } from 'react';
 import { getRecentTaskEvents } from '../src/db/eventsDb';
 import { getCloudEventsApi } from '../src/api/client';
 
-const LIVE_WS_URL = "wss://taragent.wetarteam.workers.dev/api/live/shop:main";
+// Use REST API polling instead of SSE (EventSource not available in React Native)
+const CLOUD_EVENTS_API = "https://taragent.wetarteam.workers.dev/api/events/shop:main";
 
 export interface LiveEvent {
   id?: string;     // Unique event ID for duplicate detection
@@ -144,43 +145,59 @@ export function useLiveEvents() {
   useEffect(() => {
     loadLocalEvents();
     loadCloudEvents();
-    connectWebSocket();
+    connectPolling();
     return () => {
-      if (ws.current) ws.current.close();
+      disconnectPolling();
     };
   }, []);
 
-  const connectWebSocket = () => {
+  // Polling for real-time updates (works in React Native where EventSource/WS not available)
+  const connectPolling = () => {
     setStatus('Connecting...');
-    ws.current = new WebSocket(LIVE_WS_URL);
-
-    ws.current.onopen = () => {
-      setStatus('Connected');
-    };
-
-    ws.current.onmessage = (e) => {
+    
+    // Poll every 5 seconds
+    const pollInterval = setInterval(async () => {
       try {
-        const data = JSON.parse(e.data);
-        const newEvent: LiveEvent = {
-          ...data,
-          timestamp: new Date().toLocaleTimeString(),
-          source: 'cloud',  // Mark as cloud/remote event (from WebSocket)
-        };
-        
-        setEvents((prev) => [newEvent, ...prev].slice(0, 50));
-      } catch (err) {
-        console.error("Failed to parse live event", err);
+        const response = await fetch(`${CLOUD_EVENTS_API}?limit=5`);
+        if (response.ok) {
+          const result = await response.json();
+          if (result?.success && result?.result?.length > 0) {
+            // Add new events to the list
+            const newEvents = result.result.map((ev: any) => ({
+              id: ev.id,
+              opcode: ev.opcode,
+              delta: ev.delta || 0,
+              streamid: ev.streamid,
+              title: ev.payload?.title,
+              status: 'cloud',
+              timestamp: ev.timestamp ? new Date(ev.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString(),
+              source: 'cloud' as const,
+            }));
+            
+            setEvents((prev) => {
+              const existingIds = new Set(prev.map(e => e.id).filter(Boolean));
+              const newOnly = newEvents.filter(e => e.id && !existingIds.has(e.id));
+              if (newOnly.length === 0) return prev;
+              return [...newOnly, ...prev].slice(0, 50);
+            });
+          }
+          setStatus('Connected');
+        }
+      } catch (e) {
+        console.error('[useLiveEvents] Poll error:', e);
+        setStatus('Error');
       }
-    };
+    }, 5000);
+    
+    // Store interval for cleanup
+    ws.current = pollInterval as any;
+  };
 
-    ws.current.onerror = (e) => {
-      setStatus('Error');
-    };
-
-    ws.current.onclose = () => {
-      setStatus('Reconnecting...');
-      setTimeout(connectWebSocket, 3000);
-    };
+  const disconnectPolling = () => {
+    if (ws.current) {
+      clearInterval(ws.current);
+      ws.current = null;
+    }
   };
 
   return { events, status };

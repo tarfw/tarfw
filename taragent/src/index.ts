@@ -20,6 +20,35 @@ type Bindings = {
 
 const app = new Hono<{ Bindings: Bindings }>();
 
+// ─── CORS Middleware ───
+app.use('*', async (c, next) => {
+  if (c.req.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Max-Age': '86400',
+      },
+    });
+  }
+  await next();
+  // Add CORS headers to all responses
+  const response = c.res;
+  if (response) {
+    return new Response(response.body, {
+      status: response.status,
+      headers: {
+        ...Object.fromEntries(response.headers.entries()),
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      },
+    });
+  }
+});
+
 // ─── /api/state — Direct state management (app interface only, no channels) ───
 
 const StateBodySchema = z.object({
@@ -501,31 +530,80 @@ app.post('/api/event', async (c) => {
     
     console.log('[SAMPLE EVENT] Broadcast:', event);
     
-    return c.json({ 
+    // Return with CORS headers
+    return new Response(JSON.stringify({ 
       success: true, 
       result: { 
         emitted: true, 
         event,
         scope 
       } 
-    }, 201);
+    }), {
+      status: 201,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+      },
+    });
   } catch (err: any) {
     console.error('Sample event error:', err);
     return c.json({ error: err.message }, 500);
   }
 });
 
-// WebSocket Live Tracking Route
+// Server-Sent Events (SSE) for real-time updates - more reliable than WebSocket
 app.get('/api/live/:scope', async (c) => {
   const scope = c.req.param('scope');
+  
   if (!c.env.ORDER_DO) {
-    return c.json({ error: 'ORDER_DO not bound' }, 500);
+    return new Response('ORDER_DO not bound', { status: 500 });
   }
-  
-  const id = c.env.ORDER_DO.idFromName(scope);
-  const stub = c.env.ORDER_DO.get(id);
-  
-  return stub.fetch(c.req.raw);
+
+  // Create a streaming response for SSE
+  const stream = new ReadableStream({
+    async start(controller) {
+      const encoder = new TextEncoder();
+      
+      // Send initial connection message
+      controller.enqueue(encoder.encode(`data: {"type":"connected","scope":"${scope}"}\n\n`));
+      
+      // Poll for new events every 3 seconds and send via SSE
+      const interval = setInterval(async () => {
+        try {
+          const id = c.env.ORDER_DO!.idFromName(scope);
+          const stub = c.env.ORDER_DO!.get(id);
+          const response = await stub.fetch(new Request(`http://localhost/api/events?limit=5&scope=${scope}`, { method: 'GET' }));
+          
+          if (response.ok) {
+            const events = await response.json();
+            if (events && events.length > 0) {
+              // Send each event as SSE
+              for (const event of events) {
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+              }
+            }
+          }
+        } catch (e) {
+          console.error('[SSE] Poll error:', e);
+        }
+      }, 3000);
+      
+      // Clean up on close
+      c.req.raw.signal.addEventListener('abort', () => {
+        clearInterval(interval);
+        controller.close();
+      });
+    }
+  });
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+    },
+  });
 });
 
 // ─── /api/events/:scope — Get persisted cloud events from DO SQLite ───
@@ -553,7 +631,90 @@ app.get('/api/events/:scope', async (c) => {
   }
   
   const events = await response.json();
-  return c.json({ success: true, result: events });
+  // Return response with explicit CORS headers
+  return new Response(JSON.stringify({ success: true, result: events }), {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+    },
+  });
+});
+
+// DELETE /api/events/:scope — Delete event by ID
+app.delete('/api/events/:scope', async (c) => {
+  const scope = c.req.param('scope');
+  const eventId = c.req.query('id');
+  
+  if (!eventId) {
+    return c.json({ error: 'Event ID required' }, 400);
+  }
+  
+  if (!c.env.ORDER_DO) {
+    return c.json({ error: 'ORDER_DO not bound' }, 500);
+  }
+  
+  const id = c.env.ORDER_DO.idFromName(scope);
+  const stub = c.env.ORDER_DO.get(id);
+  
+  // Call DO to delete event
+  const response = await stub.fetch(new Request(`http://localhost/api/events?id=${eventId}&scope=${scope}`, {
+    method: 'DELETE',
+  }));
+  
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('[API /events/DELETE] DO returned error:', response.status, errorText);
+    return c.json({ error: 'DO error', details: errorText }, 500);
+  }
+  
+  const result = await response.json();
+  return new Response(JSON.stringify({ success: true, result }), {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+    },
+  });
+});
+
+// PUT /api/events/:scope — Update event by ID
+app.put('/api/events/:scope', async (c) => {
+  const scope = c.req.param('scope');
+  const eventId = c.req.query('id');
+  const body = await c.req.json();
+  
+  if (!eventId) {
+    return c.json({ error: 'Event ID required' }, 400);
+  }
+  
+  if (!c.env.ORDER_DO) {
+    return c.json({ error: 'ORDER_DO not bound' }, 500);
+  }
+  
+  const id = c.env.ORDER_DO.idFromName(scope);
+  const stub = c.env.ORDER_DO.get(id);
+  
+  // Call DO to update event
+  const response = await stub.fetch(new Request(`http://localhost/api/events?id=${eventId}&scope=${scope}`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  }));
+  
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('[API /events/PUT] DO returned error:', response.status, errorText);
+    return c.json({ error: 'DO error', details: errorText }, 500);
+  }
+  
+  const result = await response.json();
+  return new Response(JSON.stringify({ success: true, result }), {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+    },
+  });
 });
 
 // ─── Auth Middleware ───

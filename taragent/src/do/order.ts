@@ -27,13 +27,11 @@ export class OrderDO extends DurableObject {
   async initializeSql() {
     if (this.sql) return this.sql;
     this.sql = this.ctx.storage.sql;
-    // Use exec with no bindings for CREATE TABLE
     this.sql.exec(CREATE_EVENTS_TABLE);
     console.log('[OrderDO] SQLite initialized for cloud events');
     return this.sql;
   }
 
-  // Save event to SQLite with error handling
   async saveCloudEvent(event: {
     opcode: number;
     streamid: string;
@@ -42,37 +40,26 @@ export class OrderDO extends DurableObject {
     scope: string;
   }): Promise<string | null> {
     try {
-      console.log('[OrderDO] saveCloudEvent called with:', event);
-      
       const db = await this.initializeSql();
-      console.log('[OrderDO] SQL db initialized');
-      
       const id = crypto.randomUUID();
       const now = new Date().toISOString();
       const payloadStr = JSON.stringify(event.payload || {});
-      
-      // Use exec with parameter bindings (correct API from docs)
+
       db.exec(
         `INSERT INTO cloud_events (id, opcode, streamid, delta, payload, scope, source, ts)
          VALUES (?, ?, ?, ?, ?, ?, 'cloud', ?)`,
         id, event.opcode, event.streamid, event.delta || 0, payloadStr, event.scope, now
       );
-      console.log('[OrderDO] SQL executed successfully');
-      
-      console.log('[OrderDO] Event saved:', { id, opcode: event.opcode, streamid: event.streamid, scope: event.scope });
       return id;
     } catch (err: any) {
-      console.error('[OrderDO] Failed to save event:', { error: err.message, stack: err.stack, event: { opcode: event.opcode, streamid: event.streamid } });
+      console.error('[OrderDO] Failed to save event:', err.message);
       return null;
     }
   }
 
-  // Check if event already exists (for deduplication) - uses composite key
   async eventExists(opcode: number, streamid: string, scope: string, timeWindowSeconds = 5): Promise<boolean> {
     try {
       const db = await this.initializeSql();
-      
-      // Use exec with parameter bindings (correct API from docs)
       const cursor = db.exec(
         `SELECT 1 FROM cloud_events 
          WHERE opcode = ? AND streamid = ? AND scope = ? 
@@ -80,39 +67,27 @@ export class OrderDO extends DurableObject {
          LIMIT 1`,
         opcode, streamid, scope
       );
-      
-      // cursor is iterable - use .one() to get first row
       try {
         const row = cursor.one();
         return !!row;
       } catch (e) {
-        // one() throws if no rows or more than one row
         return false;
       }
     } catch (err) {
-      console.error('[OrderDO] Error checking event existence:', err);
       return false;
     }
   }
 
-  // Get recent events for a scope
   async getRecentEvents(scope: string, limit = 50): Promise<any[]> {
     try {
       const db = await this.initializeSql();
-      
-      // Use exec with parameter bindings (correct API from docs)
       const cursor = db.exec(
         `SELECT * FROM cloud_events WHERE scope = ? ORDER BY ts DESC LIMIT ?`,
         scope, limit
       );
-      
-      // cursor is iterable - use .toArray() to get all rows
       const rows = cursor.toArray();
-      
-      if (!rows || rows.length === 0) {
-        return [];
-      }
-      
+      if (!rows || rows.length === 0) return [];
+
       return rows.map((row: any) => ({
         id: row.id,
         opcode: row.opcode,
@@ -131,101 +106,137 @@ export class OrderDO extends DurableObject {
 
   async fetch(request: Request): Promise<Response> {
     const upgradeHeader = request.headers.get('Upgrade');
-    if (!upgradeHeader || upgradeHeader !== 'websocket') {
-      // GET /api/events - fetch recent cloud events
-      if (request.method === "GET" && request.url.includes('/api/events')) {
-        try {
-          const url = new URL(request.url);
-          const limit = parseInt(url.searchParams.get('limit') || '50');
-          const scope = url.searchParams.get('scope') || DEFAULT_SCOPE;
-          console.log('[OrderDO] GET /api/events called, scope:', scope, 'limit:', limit);
-          const events = await this.getRecentEvents(scope, limit);
-          console.log('[OrderDO] Got events:', events.length);
-          return new Response(JSON.stringify(events), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' }
-          });
-        } catch (err: any) {
-          console.error('[OrderDO] GET /api/events failed:', err.message);
-          return new Response(JSON.stringify({ error: err.message }), {
-            status: 500,
-            headers: { 'Content-Type': 'application/json' }
-          });
-        }
-      }
 
-      if (request.method === "POST") {
-        const payload = await request.text();
-        let eventData = null;
-        
-        // Try to parse and save the event
-        try {
-          eventData = JSON.parse(payload);
-          console.log('[OrderDO] POST payload parsed:', eventData);
-          
-          if (eventData.opcode && eventData.streamid) {
-            const scope = eventData.scope || DEFAULT_SCOPE;
-            console.log('[OrderDO] POST received event:', { opcode: eventData.opcode, streamid: eventData.streamid, scope });
-            
-            // Always save - skip duplicate check for now
-            console.log('[OrderDO] Saving event directly...');
-            const savedId = await this.saveCloudEvent({
-              opcode: eventData.opcode,
-              streamid: eventData.streamid,
-              delta: eventData.delta,
-              payload: eventData.payload,
-              scope: scope,
-            });
-            console.log('[OrderDO] Save result:', savedId);
-          } else {
-            console.log('[OrderDO] Event missing opcode or streamid:', eventData);
-          }
-        } catch (e: any) {
-          console.log('[OrderDO] JSON parse error:', e.message);
-          // Not a valid event JSON, just broadcast
-        }
-        
-        // Broadcast to all WebSocket clients
-        const sockets = this.ctx.getWebSockets();
-        for (const ws of sockets) {
-          try {
-            ws.send(payload);
-          } catch (e) {
-            console.error("Failed to broadcast to session:", e);
-          }
-        }
-        return new Response(JSON.stringify({ broadcast: true, saved: !!eventData }), { 
-          status: 200,
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
-      return new Response('Expected Upgrade: websocket', { status: 426 });
+    // Handle WebSocket upgrade FIRST - before any SQLite operations
+    if (upgradeHeader === 'websocket') {
+      console.log('[OrderDO] WebSocket upgrade request');
+      const webSocketPair = new WebSocketPair();
+      const [client, server] = Object.values(webSocketPair);
+
+      this.ctx.acceptWebSocket(server);
+
+      return new Response(null, {
+        status: 101,
+        webSocket: client,
+      });
     }
 
-    const webSocketPair = new WebSocketPair();
-    const [client, server] = Object.values(webSocketPair);
+    // Handle REST API requests
+    if (request.method === "GET" && request.url.includes('/api/events')) {
+      try {
+        const url = new URL(request.url);
+        const limit = parseInt(url.searchParams.get('limit') || '50');
+        const scope = url.searchParams.get('scope') || DEFAULT_SCOPE;
+        const events = await this.getRecentEvents(scope, limit);
+        return new Response(JSON.stringify(events), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+        });
+      } catch (err: any) {
+        return new Response(JSON.stringify({ error: err.message }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+        });
+      }
+    }
 
-    // Accept the WebSocket connection explicitly through context
-    this.ctx.acceptWebSocket(server);
+    if (request.method === "POST") {
+      const payload = await request.text();
+      let eventData = null;
 
-    return new Response(null, {
-      status: 101,
-      webSocket: client,
-    });
+      try {
+        eventData = JSON.parse(payload);
+        if (eventData.opcode && eventData.streamid) {
+          const scope = eventData.scope || DEFAULT_SCOPE;
+          await this.saveCloudEvent({
+            opcode: eventData.opcode,
+            streamid: eventData.streamid,
+            delta: eventData.delta,
+            payload: eventData.payload,
+            scope: scope,
+          });
+        }
+      } catch (e: any) {
+        console.log('[OrderDO] JSON parse error:', e.message);
+      }
+
+      // Broadcast to all WebSocket clients
+      const sockets = this.ctx.getWebSockets();
+      for (const ws of sockets) {
+        try { ws.send(payload); } catch (e) {}
+      }
+      return new Response(JSON.stringify({ broadcast: true, saved: !!eventData }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+      });
+    }
+
+    if (request.method === "DELETE") {
+      const url = new URL(request.url);
+      const eventId = url.searchParams.get('id');
+
+      if (!eventId) {
+        return new Response(JSON.stringify({ error: 'Event ID required' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+        });
+      }
+
+      try {
+        const db = await this.initializeSql();
+        db.exec(`DELETE FROM cloud_events WHERE id = ?`, eventId);
+        return new Response(JSON.stringify({ success: true, deleted: eventId }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+        });
+      } catch (err: any) {
+        return new Response(JSON.stringify({ error: err.message }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+        });
+      }
+    }
+
+    if (request.method === "PUT") {
+      const url = new URL(request.url);
+      const eventId = url.searchParams.get('id');
+      const body = await request.json();
+
+      if (!eventId) {
+        return new Response(JSON.stringify({ error: 'Event ID required' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+        });
+      }
+
+      try {
+        const db = await this.initializeSql();
+        const { opcode, streamid, delta, payload } = body;
+        db.exec(`UPDATE cloud_events SET opcode = ?, streamid = ?, delta = ?, payload = ? WHERE id = ?`,
+          opcode, streamid, delta || 0, JSON.stringify(payload || {}), eventId);
+        return new Response(JSON.stringify({ success: true, updated: eventId }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+        });
+      } catch (err: any) {
+        return new Response(JSON.stringify({ error: err.message }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+        });
+      }
+    }
+
+    return new Response('Expected Upgrade: websocket', { status: 426 });
   }
 
   webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
-    console.log(`OrderDO received message: ${message}`);
-    
-    // Parse and persist WebSocket messages too
     const messageStr = typeof message === 'string' ? message : new TextDecoder().decode(message);
     let eventData: any = null;
-    
+
     try {
       eventData = JSON.parse(messageStr);
       if (eventData.opcode && eventData.streamid) {
         const scope = eventData.scope || DEFAULT_SCOPE;
-        // Check for duplicates before saving (with error handling)
         this.eventExists(eventData.opcode, eventData.streamid, scope, 5)
           .then(async (exists) => {
             if (!exists) {
@@ -240,24 +251,17 @@ export class OrderDO extends DurableObject {
           })
           .catch(err => console.error('[OrderDO] Deduplication check failed:', err));
       }
-    } catch (e) {
-      // Not a valid event JSON, just broadcast
-    }
-    
+    } catch (e) {}
+
     // Broadcast to all other WebSocket clients
     const sockets = this.ctx.getWebSockets();
     for (const session of sockets) {
       if (session !== ws) {
-        try {
-          session.send(messageStr);
-        } catch (e) {
-          console.error("Failed to send message to session:", e);
-        }
+        try { session.send(messageStr); } catch (e) {}
       }
     }
   }
 
   webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean) {}
-
   webSocketError(ws: WebSocket, error: unknown) {}
-}
+}
