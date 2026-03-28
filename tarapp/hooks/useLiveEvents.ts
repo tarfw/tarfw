@@ -1,204 +1,209 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { getRecentTaskEvents } from '../src/db/eventsDb';
-import { getCloudEventsApi } from '../src/api/client';
-
-// Use REST API polling instead of SSE (EventSource not available in React Native)
-const CLOUD_EVENTS_API = "https://taragent.wetarteam.workers.dev/api/events/shop:main";
+import { getCloudEventsApi, WS_URL } from '../src/api/client';
 
 export interface LiveEvent {
-  id?: string;     // Unique event ID for duplicate detection
+  id?: string;
   opcode: number;
   delta: number;
   streamid: string;
-  title?: string;  // For task events - shows task title
+  title?: string;
   status: string;
   timestamp: string;
-  source: 'local' | 'cloud';  // Track if event is from local DB or cloud/remote
+  rawTimestamp?: string;
+  source: 'local' | 'cloud';
 }
 
-// Global refresh trigger for instant task event updates
+// Global refresh trigger for local events only
 let refreshCallback: (() => void) | null = null;
 
 export function triggerLiveEventsRefresh() {
-  console.log('[useLiveEvents] Triggering instant refresh');
-  if (refreshCallback) {
-    refreshCallback();
-  }
+  console.log('[useLiveEvents] Triggering local refresh');
+  if (refreshCallback) refreshCallback();
+}
+
+function parseCloudEvent(ev: any): LiveEvent {
+  let title: string | undefined;
+  try {
+    const payload = ev.payload ? (typeof ev.payload === 'string' ? JSON.parse(ev.payload) : ev.payload) : null;
+    title = payload?.title || undefined;
+  } catch (e) {}
+  return {
+    id: ev.id,
+    opcode: ev.opcode,
+    delta: ev.delta || 0,
+    streamid: ev.streamid,
+    title,
+    status: 'cloud',
+    timestamp: ev.timestamp ? new Date(ev.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString(),
+    rawTimestamp: ev.timestamp || new Date().toISOString(),
+    source: 'cloud',
+  };
 }
 
 export function useLiveEvents() {
   const [events, setEvents] = useState<LiveEvent[]>([]);
   const [status, setStatus] = useState('Connecting...');
-  const ws = useRef<WebSocket | null>(null);
-  const loadRef = useRef<((append?: boolean) => Promise<void>) | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const backoff = useRef(1000);
 
-  const loadLocalEvents = async (append = false) => {
-    console.log('[useLiveEvents] Loading local task events, append:', append);
+  const loadLocalEvents = useCallback(async () => {
     try {
       const localEvents = await getRecentTaskEvents(20);
-      console.log('[useLiveEvents] Found', localEvents.length, 'local task events');
-      
       if (localEvents && localEvents.length > 0) {
-        const mappedEvents: LiveEvent[] = localEvents.map((ev: any) => {
-          // Parse payload to get task title
-          let title: string | undefined;
-          try {
-            const payload = ev.payload ? JSON.parse(ev.payload) : null;
-            title = payload?.title || undefined;
-          } catch (e) {
-            console.log('[useLiveEvents] Invalid payload JSON for event:', ev.id);
-          }
-          
-          console.log('[useLiveEvents] Mapping event:', { id: ev.id, opcode: ev.opcode, title, task_id: ev.task_id });
-          
-          return {
-            id: ev.id,        // Use unique event ID for duplicate detection
-            opcode: ev.opcode,
-            delta: ev.delta || 0,
-            streamid: ev.task_id,
-            title: title,  // Include task title for display
-            status: 'local',
-            timestamp: ev.ts ? new Date(ev.ts).toLocaleTimeString() : new Date().toLocaleTimeString(),
-            source: 'local',  // Mark as local event (from events.db)
-          };
-        });
-        
-        if (append) {
-          // Append new events to existing ones, avoiding duplicates using unique event ID
-          setEvents((prev) => {
-            const existingIds = new Set(prev.map(e => e.id).filter(Boolean));
-            const newOnly = mappedEvents.filter(e => e.id && !existingIds.has(e.id));
-            if (newOnly.length === 0) return prev;
-            console.log('[useLiveEvents] Adding', newOnly.length, 'new events');
-            return [...newOnly, ...prev].slice(0, 50);
-          });
-        } else {
-          setEvents((prev) => [...mappedEvents, ...prev].slice(0, 50));
-        }
-      }
-    } catch (e) {
-      console.error('[useLiveEvents] Failed to load local events:', e);
-    }
-  };
-
-  // Load cloud events from DO SQLite
-  const loadCloudEvents = async (append = false) => {
-    console.log('[useLiveEvents] Loading cloud events from DO SQLite, append:', append);
-    try {
-      const result = await getCloudEventsApi('shop:main', 20);
-      console.log('[useLiveEvents] Cloud events API response:', result);
-      
-      if (result?.success && result?.result && result.result.length > 0) {
-        const cloudEvents: LiveEvent[] = result.result.map((ev: any) => {
-          // Parse payload to get title for task events
+        const mapped: LiveEvent[] = localEvents.map((ev: any) => {
           let title: string | undefined;
           try {
             const payload = ev.payload ? JSON.parse(ev.payload) : null;
             title = payload?.title || undefined;
           } catch (e) {}
-          
           return {
             id: ev.id,
             opcode: ev.opcode,
             delta: ev.delta || 0,
-            streamid: ev.streamid,
-            title: title,
-            status: 'cloud',
-            timestamp: ev.timestamp ? new Date(ev.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString(),
-            source: 'cloud',
+            streamid: ev.task_id,
+            title,
+            status: 'local',
+            timestamp: ev.ts ? new Date(ev.ts).toLocaleTimeString() : new Date().toLocaleTimeString(),
+            rawTimestamp: ev.ts || new Date().toISOString(),
+            source: 'local' as const,
           };
         });
-        
-        console.log('[useLiveEvents] Mapped', cloudEvents.length, 'cloud events');
-        
-        if (append) {
-          setEvents((prev) => {
-            const existingIds = new Set(prev.map(e => e.id).filter(Boolean));
-            const newOnly = cloudEvents.filter(e => e.id && !existingIds.has(e.id));
-            if (newOnly.length === 0) return prev;
-            console.log('[useLiveEvents] Adding', newOnly.length, 'new cloud events');
-            return [...newOnly, ...prev].slice(0, 50);
-          });
-        } else {
-          setEvents((prev) => [...cloudEvents, ...prev].slice(0, 50));
-        }
+        setEvents((prev) => {
+          const existingIds = new Set(prev.map(e => e.id).filter(Boolean));
+          const newOnly = mapped.filter(e => e.id && !existingIds.has(e.id));
+          if (newOnly.length === 0) return prev;
+          return [...newOnly, ...prev].slice(0, 100);
+        });
       }
     } catch (e) {
-      console.error('[useLiveEvents] Failed to load cloud events:', e);
+      console.error('[useLiveEvents] Local events error:', e);
     }
-  };
+  }, []);
 
-  // Store the function in ref - only runs once after render
-  useEffect(() => {
-    loadRef.current = loadLocalEvents;
-    // Set up global refresh callback for instant updates
-    refreshCallback = () => {
-      loadLocalEvents(true);
-      loadCloudEvents(true);
-    };
-    return () => {
-      refreshCallback = null;
-    };
-  }, [loadLocalEvents, loadCloudEvents]);
+  const loadCloudEvents = useCallback(async () => {
+    try {
+      const result = await getCloudEventsApi('shop:main', 50);
+      if (result?.success && result?.result?.length > 0) {
+        const cloudEvents = result.result.map(parseCloudEvent);
+        setEvents((prev) => {
+          const localEvents = prev.filter(e => e.source === 'local');
+          const cloudIds = new Set(cloudEvents.map((e: LiveEvent) => e.id));
+          const localOnly = localEvents.filter(e => !e.id || !cloudIds.has(e.id));
+          return [...cloudEvents, ...localOnly]
+            .sort((a, b) => (b.rawTimestamp || '').localeCompare(a.rawTimestamp || ''))
+            .slice(0, 100);
+        });
+      }
+    } catch (e) {
+      console.error('[useLiveEvents] Cloud events error:', e);
+    }
+  }, []);
 
-  // Load local task events on mount
-  useEffect(() => {
-    loadLocalEvents();
-    loadCloudEvents();
-    connectPolling();
-    return () => {
-      disconnectPolling();
+  const connectWs = useCallback(() => {
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+
+    const wsUrl = `${WS_URL}/shop:main`;
+    console.log('[useLiveEvents] Connecting WebSocket:', wsUrl);
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      if (!mountedRef.current) { ws.close(); return; }
+      console.log('[useLiveEvents] WebSocket connected');
+      setStatus('Connected');
+      backoff.current = 1000;
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+
+        // Handle delete broadcast
+        if (data.type === 'delete' && data.id) {
+          setEvents((prev) => prev.filter(e => e.id !== data.id));
+          return;
+        }
+
+        // Handle update broadcast
+        if (data.type === 'update' && data.id) {
+          const updated = parseCloudEvent(data);
+          setEvents((prev) => prev.map(e => e.id === data.id ? updated : e));
+          return;
+        }
+
+        // Could be a single event or an array
+        const incoming = Array.isArray(data) ? data : [data];
+        const newEvents = incoming.map(parseCloudEvent);
+
+        setEvents((prev) => {
+          const existingIds = new Set(prev.map(e => e.id).filter(Boolean));
+          const fresh = newEvents.filter(e => e.id && !existingIds.has(e.id));
+          if (fresh.length === 0) return prev;
+          return [...fresh, ...prev]
+            .sort((a, b) => (b.rawTimestamp || '').localeCompare(a.rawTimestamp || ''))
+            .slice(0, 100);
+        });
+      } catch (e) {
+        console.error('[useLiveEvents] WS message parse error:', e);
+      }
+    };
+
+    ws.onclose = () => {
+      if (!mountedRef.current) return;
+      console.log('[useLiveEvents] WebSocket closed, reconnecting in', backoff.current, 'ms');
+      setStatus('Reconnecting...');
+      wsRef.current = null;
+      reconnectTimer.current = setTimeout(() => {
+        if (!mountedRef.current) return;
+        backoff.current = Math.min(backoff.current * 2, 30000);
+        connectWs();
+      }, backoff.current);
+    };
+
+    ws.onerror = () => {
+      if (!mountedRef.current) return;
+      console.warn('[useLiveEvents] WebSocket error, will reconnect');
+      setStatus('Reconnecting...');
     };
   }, []);
 
-  // Polling for real-time updates (works in React Native where EventSource/WS not available)
-  const connectPolling = () => {
-    setStatus('Connecting...');
-    
-    // Poll every 5 seconds
-    const pollInterval = setInterval(async () => {
-      try {
-        const response = await fetch(`${CLOUD_EVENTS_API}?limit=5`);
-        if (response.ok) {
-          const result = await response.json();
-          if (result?.success && result?.result?.length > 0) {
-            // Add new events to the list
-            const newEvents = result.result.map((ev: any) => ({
-              id: ev.id,
-              opcode: ev.opcode,
-              delta: ev.delta || 0,
-              streamid: ev.streamid,
-              title: ev.payload?.title,
-              status: 'cloud',
-              timestamp: ev.timestamp ? new Date(ev.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString(),
-              source: 'cloud' as const,
-            }));
-            
-            setEvents((prev) => {
-              const existingIds = new Set(prev.map(e => e.id).filter(Boolean));
-              const newOnly = newEvents.filter(e => e.id && !existingIds.has(e.id));
-              if (newOnly.length === 0) return prev;
-              return [...newOnly, ...prev].slice(0, 50);
-            });
-          }
-          setStatus('Connected');
-        }
-      } catch (e) {
-        console.error('[useLiveEvents] Poll error:', e);
-        setStatus('Error');
-      }
-    }, 5000);
-    
-    // Store interval for cleanup
-    ws.current = pollInterval as any;
-  };
+  useEffect(() => {
+    refreshCallback = () => loadLocalEvents();
+    return () => { refreshCallback = null; };
+  }, [loadLocalEvents]);
 
-  const disconnectPolling = () => {
-    if (ws.current) {
-      clearInterval(ws.current);
-      ws.current = null;
-    }
-  };
+  const mountedRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    // Initial load via REST
+    loadLocalEvents();
+    loadCloudEvents();
+    // Then connect WebSocket for real-time
+    connectWs();
+
+    return () => {
+      mountedRef.current = false;
+      if (reconnectTimer.current) {
+        clearTimeout(reconnectTimer.current);
+        reconnectTimer.current = null;
+      }
+      if (wsRef.current) {
+        // Remove handlers before closing to suppress stale errors
+        wsRef.current.onopen = null;
+        wsRef.current.onmessage = null;
+        wsRef.current.onclose = null;
+        wsRef.current.onerror = null;
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+    };
+  }, []);
 
   return { events, status };
 }

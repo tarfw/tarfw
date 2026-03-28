@@ -185,6 +185,12 @@ export class OrderDO extends DurableObject {
       try {
         const db = await this.initializeSql();
         db.exec(`DELETE FROM cloud_events WHERE id = ?`, eventId);
+        // Broadcast delete to all WS clients
+        const deleteMsg = JSON.stringify({ type: 'delete', id: eventId });
+        const sockets = this.ctx.getWebSockets();
+        for (const ws of sockets) {
+          try { ws.send(deleteMsg); } catch (e) {}
+        }
         return new Response(JSON.stringify({ success: true, deleted: eventId }), {
           status: 200,
           headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
@@ -214,6 +220,25 @@ export class OrderDO extends DurableObject {
         const { opcode, streamid, delta, payload } = body;
         db.exec(`UPDATE cloud_events SET opcode = ?, streamid = ?, delta = ?, payload = ? WHERE id = ?`,
           opcode, streamid, delta || 0, JSON.stringify(payload || {}), eventId);
+        // Broadcast update to all WS clients
+        const updatedRow = db.exec(`SELECT * FROM cloud_events WHERE id = ?`, eventId).toArray();
+        if (updatedRow.length > 0) {
+          const row = updatedRow[0] as any;
+          const updateMsg = JSON.stringify({
+            type: 'update',
+            id: row.id,
+            opcode: row.opcode,
+            streamid: row.streamid,
+            delta: row.delta,
+            payload: row.payload ? JSON.parse(row.payload) : {},
+            scope: row.scope,
+            timestamp: row.ts,
+          });
+          const sockets = this.ctx.getWebSockets();
+          for (const ws of sockets) {
+            try { ws.send(updateMsg); } catch (e) {}
+          }
+        }
         return new Response(JSON.stringify({ success: true, updated: eventId }), {
           status: 200,
           headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }

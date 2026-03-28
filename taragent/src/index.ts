@@ -34,6 +34,8 @@ app.use('*', async (c, next) => {
     });
   }
   await next();
+  // Skip CORS wrapping for WebSocket upgrades (101 responses)
+  if (c.res.status === 101) return;
   // Add CORS headers to all responses
   const response = c.res;
   if (response) {
@@ -476,6 +478,21 @@ app.post('/api/channel', async (c) => {
     console.error("Channel Error:", err);
     return c.json({ error: "Internal Server Error", message: err.message }, 500);
   }
+});
+
+// ─── /api/ws/:scope — WebSocket proxy to OrderDO ───
+app.get('/api/ws/:scope', async (c) => {
+  const scope = c.req.param('scope');
+  const upgradeHeader = c.req.header('Upgrade');
+  if (!upgradeHeader || upgradeHeader.toLowerCase() !== 'websocket') {
+    return c.text('Expected WebSocket Upgrade', 426);
+  }
+  if (!c.env.ORDER_DO) {
+    return c.text('ORDER_DO not bound', 500);
+  }
+  const id = c.env.ORDER_DO.idFromName(scope);
+  const stub = c.env.ORDER_DO.get(id);
+  return stub.fetch(c.req.raw);
 });
 
 // ─── /api/event — Test endpoint to emit sample cloud events ───

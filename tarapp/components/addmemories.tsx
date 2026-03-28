@@ -18,6 +18,7 @@ import { STATE_TYPES, StateTypeDef } from '../src/config/stateSchemas';
 import { getAllStates } from '../src/db/turso';
 import { createTask } from '../src/db/eventsDb';
 import { triggerLiveEventsRefresh } from '../hooks/useLiveEvents';
+import { OrderScreen } from './OrderScreen';
 
 interface Props {
   visible: boolean;
@@ -26,9 +27,10 @@ interface Props {
   onSelectStateForInstance: (state: { ucode: string; title: string }) => void;
 }
 
-// Add Tasks and Inventory as special type options
-export const MEMORY_TYPES: (StateTypeDef | { type: 'tasks'; label: string; icon: string; color: string } | { type: 'inventory'; label: string; icon: string; color: string })[] = [
+// Add Tasks, Order, and Inventory as special type options
+export const MEMORY_TYPES: (StateTypeDef | { type: string; label: string; icon: string; color: string })[] = [
   { type: 'tasks', label: 'Tasks', icon: 'checkbox-outline', color: '#5856D6' },
+  { type: 'order', label: 'Order', icon: 'cart-outline', color: '#007AFF' },
   { type: 'inventory', label: 'Inventory Item', icon: 'cube-outline', color: '#34C759' },
   ...STATE_TYPES,
 ];
@@ -46,12 +48,14 @@ export function AddMemories({ visible, onClose, onSelect, onSelectStateForInstan
   const [taskPriority, setTaskPriority] = useState<'low' | 'normal' | 'high' | 'urgent'>('normal');
   const [taskDueDate, setTaskDueDate] = useState('');
   const [savingTask, setSavingTask] = useState(false);
+  const [showOrderScreen, setShowOrderScreen] = useState(false);
 
   // Reset state picker when modal closes
   useEffect(() => {
     if (!visible) {
       setShowStatePicker(false);
       setShowTaskForm(false);
+      setShowOrderScreen(false);
       // Reset task form
       setTaskTitle('');
       setTaskDescription('');
@@ -68,6 +72,9 @@ export function AddMemories({ visible, onClose, onSelect, onSelectStateForInstan
       console.log('[addmemories] Opening state picker for inventory');
       setShowStatePicker(true);
       loadStates();
+    } else if (item.type === 'order') {
+      console.log('[addmemories] Opening order screen');
+      setShowOrderScreen(true);
     } else if (item.type === 'tasks') {
       // Show task creation form
       console.log('[addmemories] Opening task creation form');
@@ -152,6 +159,17 @@ export function AddMemories({ visible, onClose, onSelect, onSelectStateForInstan
       default: return '#007AFF';
     }
   };
+
+  if (showOrderScreen) {
+    return (
+      <Modal animationType="slide" visible={visible} onRequestClose={onClose}>
+        <OrderScreen
+          onClose={() => { setShowOrderScreen(false); onClose(); }}
+          onCancel={() => setShowOrderScreen(false)}
+        />
+      </Modal>
+    );
+  }
 
   if (showStatePicker) {
     return (

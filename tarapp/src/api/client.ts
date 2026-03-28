@@ -18,6 +18,7 @@ export const STATEAI_URL = `${API_BASE_URL}/api/stateai`;
 export const SEARCH_URL = `${API_BASE_URL}/api/search`;
 export const INSTANCE_URL = `${API_BASE_URL}/api/instance`;
 export const CLOUD_EVENTS_URL = `${API_BASE_URL}/api/events`;
+export const WS_URL = 'wss://taragent.wetarteam.workers.dev/api/ws';
 
 // ─── Channel API (natural language + search only) ───
 
@@ -190,5 +191,29 @@ export async function getCloudEventsApi(scope = "shop:main", limit = 50) {
     headers,
   });
   if (!response.ok) throw new Error(`Cloud Events Error: ${response.status}`);
+  return response.json();
+}
+
+// Push a single event to DO via POST /api/event
+export async function pushCloudEventApi(event: {
+  opcode: number;
+  streamid: string;
+  delta: number;
+  payload?: Record<string, any>;
+  scope?: string;
+}) {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_BASE_URL}/api/event`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      opcode: event.opcode,
+      streamid: event.streamid,
+      delta: event.delta,
+      payload: event.payload,
+      scope: event.scope || 'shop:main',
+    }),
+  });
+  if (!response.ok) throw new Error(`Push Event Error: ${response.status}`);
   return response.json();
 }

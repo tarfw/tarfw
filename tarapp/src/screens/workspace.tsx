@@ -1,7 +1,7 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useLiveEvents } from '@/hooks/useLiveEvents';
+import { useLiveEvents, LiveEvent } from '@/hooks/useLiveEvents';
 
 // ─── Full TAR Opcode map for Workspace screen ─────────────────────────────
 
@@ -61,11 +61,47 @@ function getMeta(opcode: number) {
   return OPCODE_META[opcode] ?? { name: `OPCODE_${opcode}`, color: '#8E8E93', icon: 'flash' };
 }
 
+// ─── Group events by streamid into cards ──────────────────────────────────
+
+interface EventCard {
+  streamid: string;
+  events: LiveEvent[];
+  latestTimestamp: string;
+  latestRaw: string;
+}
+
+function groupByStreamId(events: LiveEvent[]): EventCard[] {
+  const map = new Map<string, LiveEvent[]>();
+  for (const ev of events) {
+    const key = ev.streamid || 'unknown';
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(ev);
+  }
+
+  const cards: EventCard[] = [];
+  for (const [streamid, evts] of map) {
+    // Sort events within card by time descending
+    evts.sort((a, b) => (b.rawTimestamp || '').localeCompare(a.rawTimestamp || ''));
+    cards.push({
+      streamid,
+      events: evts,
+      latestTimestamp: evts[0].timestamp,
+      latestRaw: evts[0].rawTimestamp || '',
+    });
+  }
+
+  // Sort cards by most recent event
+  cards.sort((a, b) => b.latestRaw.localeCompare(a.latestRaw));
+  return cards;
+}
+
 // ─── Screen ───────────────────────────────────────────────────────────────
 
 export default function Workspace() {
   const { events, status } = useLiveEvents();
   const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  const cards = useMemo(() => groupByStreamId(events), [events]);
 
   useEffect(() => {
     Animated.loop(
@@ -98,7 +134,7 @@ export default function Workspace() {
       </View>
 
       <ScrollView contentContainerStyle={styles.list}>
-        {events.length === 0 ? (
+        {cards.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyText}>Waiting for events…</Text>
             <Text style={styles.emptySubText}>
@@ -106,37 +142,70 @@ export default function Workspace() {
             </Text>
           </View>
         ) : (
-          events.map((ev, index) => {
-            const meta = getMeta(ev.opcode);
-            // For task events (opcode 301-311), show title instead of streamid
-            const displayText = (ev.opcode >= 301 && ev.opcode <= 311 && ev.title) 
-              ? ev.title 
-              : ev.streamid;
-            
-            // Local events (tasks from events.db) get light green background
-            const isLocalEvent = ev.source === 'local';
-            
+          cards.map((card) => {
+            // Determine card accent from the first (most recent) event
+            const leadEvent = card.events[0];
+            const leadMeta = getMeta(leadEvent.opcode);
+            const isLocal = card.events.some((e) => e.source === 'local');
+
             return (
-              <View key={index} style={[
-                styles.flatRow,
-                isLocalEvent && styles.localEventRow
-              ]}>
-                <View style={styles.flatCol}>
-                  <Text style={[styles.flatOpName, { color: meta.color }]}>{meta.name}</Text>
-                  <Text style={styles.flatStreamId}>{displayText}</Text>
-                </View>
-                <View style={styles.flatRight}>
-                  <Text style={styles.flatTime}>{ev.timestamp}</Text>
-                  <Text
-                    style={[
-                      styles.flatDelta,
-                      { color: ev.delta < 0 ? '#FF3B30' : ev.delta > 0 ? '#34C759' : '#8E8E93' },
-                    ]}
-                  >
-                    {ev.delta > 0 ? '+' : ''}
-                    {ev.delta !== 0 ? `${ev.delta}` : '—'}
+              <View
+                key={card.streamid}
+                style={[styles.card, isLocal && styles.cardLocal]}
+              >
+                {/* Card header */}
+                <View style={styles.cardHeader}>
+                  <Ionicons
+                    name={leadMeta.icon as any}
+                    size={18}
+                    color={leadMeta.color}
+                  />
+                  <Text style={styles.cardStreamId} numberOfLines={1}>
+                    {card.streamid}
                   </Text>
+                  <Text style={styles.cardTime}>{card.latestTimestamp}</Text>
                 </View>
+
+                {/* Card events */}
+                {card.events.map((ev, idx) => {
+                  const meta = getMeta(ev.opcode);
+                  const displayText =
+                    ev.opcode >= 301 && ev.opcode <= 311 && ev.title
+                      ? ev.title
+                      : '';
+
+                  return (
+                    <View key={ev.id || idx} style={styles.cardEvent}>
+                      <Text style={[styles.eventOpcode, { color: meta.color }]}>
+                        {meta.name}
+                      </Text>
+                      {displayText ? (
+                        <Text style={styles.eventDetail} numberOfLines={1}>
+                          {displayText}
+                        </Text>
+                      ) : null}
+                      <View style={styles.eventRight}>
+                        <Text style={styles.eventTime}>{ev.timestamp}</Text>
+                        <Text
+                          style={[
+                            styles.eventDelta,
+                            {
+                              color:
+                                ev.delta < 0
+                                  ? '#FF3B30'
+                                  : ev.delta > 0
+                                  ? '#34C759'
+                                  : '#8E8E93',
+                            },
+                          ]}
+                        >
+                          {ev.delta > 0 ? '+' : ''}
+                          {ev.delta !== 0 ? `${ev.delta}` : '—'}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })}
               </View>
             );
           })
@@ -153,8 +222,8 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 15,
     backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#F2F2F7',
   },
   headerContent: {
     flexDirection: 'row',
@@ -163,7 +232,6 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   title: { fontSize: 28, fontWeight: '800', color: '#1C1C1E', letterSpacing: -0.5 },
-  subtitle: { fontSize: 13, color: '#8E8E93' },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -174,29 +242,65 @@ const styles = StyleSheet.create({
   },
   statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
   statusText: { fontSize: 12, fontWeight: '600', color: '#3A3A3C' },
-  list: { paddingVertical: 10, flexGrow: 1 },
+  list: { padding: 10, flexGrow: 1 },
   emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 100, paddingHorizontal: 20 },
   emptyText: { fontSize: 16, fontWeight: '700', color: '#1C1C1E' },
   emptySubText: { fontSize: 13, color: '#8E8E93', marginTop: 4, textAlign: 'center' },
-  
-  // Flat Row Styles
-  flatRow: {
+
+  // Card styles
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    marginBottom: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E5E5EA',
+  },
+  cardLocal: {
+    backgroundColor: '#FAFFFE',
+    borderColor: '#D5EED5',
+  },
+  cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 14,
-    paddingHorizontal: 20,
+    marginBottom: 10,
+    paddingBottom: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#E5E5EA',
   },
-  // Local event (task) - very light green background
-  localEventRow: {
-    backgroundColor: '#E8F5E9', // Very light green for local tasks
+  cardStreamId: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#3A3A3C',
+    marginLeft: 8,
   },
-  flatCol: { flex: 1 },
-  flatOpName: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
-  flatStreamId: { fontSize: 15, fontWeight: '600', color: '#1C1C1E', marginTop: 2 },
-  flatRight: { alignItems: 'flex-end' },
-  flatTime: { fontSize: 11, color: '#AEAEB2', marginBottom: 2 },
-  flatDelta: { fontSize: 15, fontWeight: '800' },
+  cardTime: {
+    fontSize: 11,
+    color: '#AEAEB2',
+  },
+  cardEvent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 5,
+  },
+  eventOpcode: {
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    minWidth: 100,
+  },
+  eventDetail: {
+    flex: 1,
+    fontSize: 13,
+    color: '#1C1C1E',
+    marginLeft: 4,
+  },
+  eventRight: {
+    alignItems: 'flex-end',
+    marginLeft: 'auto',
+  },
+  eventTime: { fontSize: 10, color: '#AEAEB2' },
+  eventDelta: { fontSize: 14, fontWeight: '800' },
 });
