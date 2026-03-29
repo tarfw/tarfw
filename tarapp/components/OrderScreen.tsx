@@ -1,21 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   FlatList,
-  Modal,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { getAllInstances, updateInstance, Instance } from '../src/db/turso';
 import { pushCloudEventApi } from '../src/api/client';
-import { triggerLiveEventsRefresh } from '../hooks/useLiveEvents';
 
-// Simple UUID generator
 function generateUUID(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
     const r = (Math.random() * 16) | 0;
@@ -40,7 +36,6 @@ export function OrderScreen({ onClose, onCancel }: Props) {
   const [showPicker, setShowPicker] = useState(false);
   const [instances, setInstances] = useState<Instance[]>([]);
   const [loadingInstances, setLoadingInstances] = useState(false);
-  const [placing, setPlacing] = useState(false);
 
   const loadInstances = async () => {
     setLoadingInstances(true);
@@ -83,67 +78,64 @@ export function OrderScreen({ onClose, onCancel }: Props) {
     (sum, li) => sum + li.qty * (li.instance.value || 0),
     0
   );
-  const tax = subtotal * 0.18; // 18% GST
+  const tax = subtotal * 0.18;
   const total = subtotal + tax;
 
-  const placeOrder = async () => {
+  const placeOrder = () => {
     if (lineItems.length === 0) return;
-    setPlacing(true);
 
-    try {
+    // Close modal IMMEDIATELY
+    onClose();
+
+    // Capture values before component unmounts
+    const capturedItems = [...lineItems];
+    const capturedSubtotal = subtotal;
+    const capturedTax = tax;
+    const capturedTotal = total;
+
+    // Push to cloud in background
+    (async () => {
       const streamid = `order-${generateUUID()}`;
-      const now = new Date().toISOString();
+      const orderPayload = {
+        items: capturedItems.map((li) => ({
+          stateid: li.instance.stateid,
+          instanceId: li.instance.id,
+          qty: li.qty,
+          unitPrice: li.instance.value || 0,
+          lineTotal: li.qty * (li.instance.value || 0),
+        })),
+        subtotal: capturedSubtotal,
+        tax: capturedTax,
+        total: capturedTotal,
+        title: `Order · ${capturedItems.length} items · INR ${capturedTotal.toFixed(0)}`,
+      };
 
-      // 1. Push ORDERCREATE (501) to DO
-      await pushCloudEventApi({
-        opcode: 501,
-        streamid,
-        delta: lineItems.length,
-        payload: {
-          items: lineItems.map((li) => ({
-            stateid: li.instance.stateid,
-            instanceId: li.instance.id,
-            qty: li.qty,
-            unitPrice: li.instance.value || 0,
-            lineTotal: li.qty * (li.instance.value || 0),
-          })),
-          subtotal,
-          tax,
-          total,
-        },
-        scope: 'shop:main',
-      });
-
-      // 2. For each line item: push STOCKADJUST (104) with same streamid
-      for (const li of lineItems) {
+      try {
         await pushCloudEventApi({
-          opcode: 104,
+          opcode: 501,
           streamid,
-          delta: -li.qty,
-          payload: {
-            stateid: li.instance.stateid,
-            instanceId: li.instance.id,
-            reason: 'order',
-          },
+          delta: capturedItems.length,
+          payload: orderPayload,
           scope: 'shop:main',
         });
-
-        // 3. Decrement qty in instances.db
-        const currentQty = li.instance.qty || 0;
-        await updateInstance(li.instance.id, {
-          qty: currentQty - li.qty,
-        });
+        await Promise.all(
+          capturedItems.map(async (li) => {
+            await pushCloudEventApi({
+              opcode: 104,
+              streamid,
+              delta: -li.qty,
+              payload: { stateid: li.instance.stateid, instanceId: li.instance.id, reason: 'order' },
+              scope: 'shop:main',
+            });
+            const currentQty = li.instance.qty || 0;
+            await updateInstance(li.instance.id, { qty: currentQty - li.qty });
+          })
+        );
+        console.log('[OrderScreen] Cloud sync complete for', streamid);
+      } catch (e: any) {
+        console.error('[OrderScreen] Cloud sync failed:', e.message);
       }
-
-      // 4. Trigger instant workspace refresh
-      triggerLiveEventsRefresh();
-
-      onClose();
-    } catch (e: any) {
-      Alert.alert('Error', e.message || 'Failed to place order');
-    } finally {
-      setPlacing(false);
-    }
+    })();
   };
 
   // Item picker modal
@@ -166,7 +158,7 @@ export function OrderScreen({ onClose, onCancel }: Props) {
           <FlatList
             data={instances}
             keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.pickerList}
+            contentContainerStyle={[styles.pickerList, { paddingBottom: Math.max(insets.bottom, 40) }]}
             renderItem={({ item }) => (
               <TouchableOpacity
                 style={styles.pickerRow}
@@ -205,16 +197,16 @@ export function OrderScreen({ onClose, onCancel }: Props) {
         <Text style={styles.headerTitle}>New Order</Text>
         <TouchableOpacity
           onPress={placeOrder}
-          disabled={lineItems.length === 0 || placing}
+          disabled={lineItems.length === 0}
           hitSlop={8}
         >
           <Text
             style={[
               styles.placeText,
-              (lineItems.length === 0 || placing) && styles.placeTextDisabled,
+              lineItems.length === 0 && styles.placeTextDisabled,
             ]}
           >
-            {placing ? 'Placing...' : 'Place Order'}
+            Place Order
           </Text>
         </TouchableOpacity>
       </View>
@@ -223,7 +215,7 @@ export function OrderScreen({ onClose, onCancel }: Props) {
       <FlatList
         data={lineItems}
         keyExtractor={(item) => item.instance.id}
-        contentContainerStyle={styles.lineList}
+        contentContainerStyle={[styles.lineList, lineItems.length === 0 && { paddingBottom: Math.max(insets.bottom, 20) }]}
         ListHeaderComponent={
           <TouchableOpacity
             style={styles.addButton}
@@ -276,7 +268,7 @@ export function OrderScreen({ onClose, onCancel }: Props) {
 
       {/* Summary */}
       {lineItems.length > 0 && (
-        <View style={styles.summary}>
+        <View style={[styles.summary, { paddingBottom: Math.max(insets.bottom, 16) }]}>
           <View style={styles.summaryRow}>
             <Text style={styles.summaryLabel}>Subtotal</Text>
             <Text style={styles.summaryValue}>INR {subtotal.toFixed(2)}</Text>

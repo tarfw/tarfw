@@ -113,7 +113,6 @@ export default function AgentsScreen() {
                 <View style={styles.cardTop}>
                   {typeDef && (
                     <View style={[styles.typeTag, { backgroundColor: typeDef.color + '18' }]}>
-                      <Ionicons name={typeDef.icon as any} size={13} color={typeDef.color} />
                       <Text style={[styles.typeTagText, { color: typeDef.color }]}>{typeDef.label}</Text>
                     </View>
                   )}
@@ -277,12 +276,11 @@ const styles = StyleSheet.create({
   workspaceRowFlat: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#F2F2F7',
   },
-  workspaceOpFlat: { fontSize: 11, fontWeight: '800', width: 90 },
+  workspaceOpFlat: { fontSize: 10, fontWeight: '800', width: 90 },
   workspaceTargetFlat: { fontSize: 13, fontWeight: '600', color: '#3A3A3C', flex: 1 },
   workspaceTimeFlat: { fontSize: 11, color: '#AEAEB2' },
 });

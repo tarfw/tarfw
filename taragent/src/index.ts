@@ -490,8 +490,21 @@ app.get('/api/ws/:scope', async (c) => {
   if (!c.env.ORDER_DO) {
     return c.text('ORDER_DO not bound', 500);
   }
+  // Forward token from query param as Authorization header (WebSocket can't send custom headers)
+  const token = c.req.query('token');
   const id = c.env.ORDER_DO.idFromName(scope);
   const stub = c.env.ORDER_DO.get(id);
+  if (token) {
+    const url = new URL(c.req.url);
+    url.searchParams.delete('token');
+    const req = new Request(url.toString(), {
+      headers: {
+        ...Object.fromEntries(c.req.raw.headers),
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+    return stub.fetch(req);
+  }
   return stub.fetch(c.req.raw);
 });
 

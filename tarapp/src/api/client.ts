@@ -186,12 +186,19 @@ export async function deleteInstanceApi(id: string) {
 
 export async function getCloudEventsApi(scope = "shop:main", limit = 50) {
   const headers = await getAuthHeaders();
-  const response = await fetch(`${CLOUD_EVENTS_URL}/${scope}?limit=${limit}`, {
-    method: "GET",
-    headers,
-  });
-  if (!response.ok) throw new Error(`Cloud Events Error: ${response.status}`);
-  return response.json();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(`${CLOUD_EVENTS_URL}/${scope}?limit=${limit}`, {
+      method: "GET",
+      headers,
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`Cloud Events Error: ${response.status}`);
+    return response.json();
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // Push a single event to DO via POST /api/event
@@ -203,17 +210,24 @@ export async function pushCloudEventApi(event: {
   scope?: string;
 }) {
   const headers = await getAuthHeaders();
-  const response = await fetch(`${API_BASE_URL}/api/event`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      opcode: event.opcode,
-      streamid: event.streamid,
-      delta: event.delta,
-      payload: event.payload,
-      scope: event.scope || 'shop:main',
-    }),
-  });
-  if (!response.ok) throw new Error(`Push Event Error: ${response.status}`);
-  return response.json();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/event`, {
+      method: "POST",
+      headers,
+      signal: controller.signal,
+      body: JSON.stringify({
+        opcode: event.opcode,
+        streamid: event.streamid,
+        delta: event.delta,
+        payload: event.payload,
+        scope: event.scope || 'shop:main',
+      }),
+    });
+    if (!response.ok) throw new Error(`Push Event Error: ${response.status}`);
+    return response.json();
+  } finally {
+    clearTimeout(timer);
+  }
 }

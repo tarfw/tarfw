@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { getRecentTaskEvents } from '../src/db/eventsDb';
 import { getCloudEventsApi, WS_URL } from '../src/api/client';
+import { getAuthToken } from '../src/auth/googleSignIn';
 
 export interface LiveEvent {
   id?: string;
@@ -14,29 +14,25 @@ export interface LiveEvent {
   source: 'local' | 'cloud';
 }
 
-// Global refresh trigger for local events only
-let refreshCallback: (() => void) | null = null;
-
-export function triggerLiveEventsRefresh() {
-  console.log('[useLiveEvents] Triggering local refresh');
-  if (refreshCallback) refreshCallback();
-}
-
 function parseCloudEvent(ev: any): LiveEvent {
   let title: string | undefined;
   try {
     const payload = ev.payload ? (typeof ev.payload === 'string' ? JSON.parse(ev.payload) : ev.payload) : null;
     title = payload?.title || undefined;
   } catch (e) {}
+
+  const rawTimestamp = ev.timestamp || new Date().toISOString();
+  const syntheticId = ev.id || `${ev.streamid}_${ev.opcode}_${ev.delta}_${ev.timestamp}`;
+
   return {
-    id: ev.id,
+    id: syntheticId,
     opcode: ev.opcode,
     delta: ev.delta || 0,
     streamid: ev.streamid,
     title,
     status: 'cloud',
     timestamp: ev.timestamp ? new Date(ev.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString(),
-    rawTimestamp: ev.timestamp || new Date().toISOString(),
+    rawTimestamp,
     source: 'cloud',
   };
 }
@@ -47,107 +43,95 @@ export function useLiveEvents() {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const backoff = useRef(1000);
+  const mountedRef = useRef(false);
 
-  const loadLocalEvents = useCallback(async () => {
-    try {
-      const localEvents = await getRecentTaskEvents(20);
-      if (localEvents && localEvents.length > 0) {
-        const mapped: LiveEvent[] = localEvents.map((ev: any) => {
-          let title: string | undefined;
-          try {
-            const payload = ev.payload ? JSON.parse(ev.payload) : null;
-            title = payload?.title || undefined;
-          } catch (e) {}
-          return {
-            id: ev.id,
-            opcode: ev.opcode,
-            delta: ev.delta || 0,
-            streamid: ev.task_id,
-            title,
-            status: 'local',
-            timestamp: ev.ts ? new Date(ev.ts).toLocaleTimeString() : new Date().toLocaleTimeString(),
-            rawTimestamp: ev.ts || new Date().toISOString(),
-            source: 'local' as const,
-          };
-        });
-        setEvents((prev) => {
-          const existingIds = new Set(prev.map(e => e.id).filter(Boolean));
-          const newOnly = mapped.filter(e => e.id && !existingIds.has(e.id));
-          if (newOnly.length === 0) return prev;
-          return [...newOnly, ...prev].slice(0, 100);
-        });
-      }
-    } catch (e) {
-      console.error('[useLiveEvents] Local events error:', e);
-    }
+  // ─── Microbatch: collect WS events, flush once per 300ms ───
+  const batchRef = useRef<LiveEvent[]>([]);
+  const batchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flushBatch = useCallback(() => {
+    batchTimer.current = null;
+    const batch = batchRef.current;
+    if (batch.length === 0) return;
+    batchRef.current = [];
+
+    setEvents((prev) => {
+      const existingIds = new Set(prev.map(e => e.id).filter(Boolean));
+      const fresh = batch.filter(e => e.id && !existingIds.has(e.id));
+      if (fresh.length === 0) return prev;
+      return [...fresh, ...prev]
+        .sort((a, b) => (b.rawTimestamp || '').localeCompare(a.rawTimestamp || ''))
+        .slice(0, 100);
+    });
   }, []);
+
+  const enqueueEvent = useCallback((ev: LiveEvent) => {
+    batchRef.current.push(ev);
+    if (!batchTimer.current) {
+      batchTimer.current = setTimeout(flushBatch, 300);
+    }
+  }, [flushBatch]);
 
   const loadCloudEvents = useCallback(async () => {
     try {
       const result = await getCloudEventsApi('shop:main', 50);
       if (result?.success && result?.result?.length > 0) {
-        const cloudEvents = result.result.map(parseCloudEvent);
-        setEvents((prev) => {
-          const localEvents = prev.filter(e => e.source === 'local');
-          const cloudIds = new Set(cloudEvents.map((e: LiveEvent) => e.id));
-          const localOnly = localEvents.filter(e => !e.id || !cloudIds.has(e.id));
-          return [...cloudEvents, ...localOnly]
-            .sort((a, b) => (b.rawTimestamp || '').localeCompare(a.rawTimestamp || ''))
-            .slice(0, 100);
-        });
+        const cloudEvents = result.result.map(parseCloudEvent)
+          .sort((a: LiveEvent, b: LiveEvent) => (b.rawTimestamp || '').localeCompare(a.rawTimestamp || ''))
+          .slice(0, 100);
+        setEvents(cloudEvents);
+      } else if (result?.success && result?.result?.length === 0) {
+        setEvents([]);
       }
     } catch (e) {
       console.error('[useLiveEvents] Cloud events error:', e);
     }
   }, []);
 
-  const connectWs = useCallback(() => {
+  // ─── WebSocket ───
+
+  const connectWs = useCallback(async () => {
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
     }
 
-    const wsUrl = `${WS_URL}/shop:main`;
-    console.log('[useLiveEvents] Connecting WebSocket:', wsUrl);
+    let wsUrl = `${WS_URL}/shop:main`;
+    try {
+      const token = await getAuthToken();
+      if (token) wsUrl += `?token=${encodeURIComponent(token)}`;
+    } catch (e) {}
+
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
       if (!mountedRef.current) { ws.close(); return; }
-      console.log('[useLiveEvents] WebSocket connected');
       setStatus('Connected');
       backoff.current = 1000;
+      loadCloudEvents();
     };
 
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
 
-        // Handle delete broadcast
         if (data.type === 'delete' && data.id) {
           setEvents((prev) => prev.filter(e => e.id !== data.id));
           return;
         }
 
-        // Handle update broadcast
         if (data.type === 'update' && data.id) {
           const updated = parseCloudEvent(data);
           setEvents((prev) => prev.map(e => e.id === data.id ? updated : e));
           return;
         }
 
-        // Could be a single event or an array
+        // New event(s) — batch them
         const incoming = Array.isArray(data) ? data : [data];
-        const newEvents = incoming.map(parseCloudEvent);
-
-        setEvents((prev) => {
-          const existingIds = new Set(prev.map(e => e.id).filter(Boolean));
-          const fresh = newEvents.filter(e => e.id && !existingIds.has(e.id));
-          if (fresh.length === 0) return prev;
-          return [...fresh, ...prev]
-            .sort((a, b) => (b.rawTimestamp || '').localeCompare(a.rawTimestamp || ''))
-            .slice(0, 100);
-        });
+        for (const raw of incoming) {
+          enqueueEvent(parseCloudEvent(raw));
+        }
       } catch (e) {
         console.error('[useLiveEvents] WS message parse error:', e);
       }
@@ -155,9 +139,8 @@ export function useLiveEvents() {
 
     ws.onclose = () => {
       if (!mountedRef.current) return;
-      console.log('[useLiveEvents] WebSocket closed, reconnecting in', backoff.current, 'ms');
-      setStatus('Reconnecting...');
       wsRef.current = null;
+      setStatus('Reconnecting...');
       reconnectTimer.current = setTimeout(() => {
         if (!mountedRef.current) return;
         backoff.current = Math.min(backoff.current * 2, 30000);
@@ -167,34 +150,26 @@ export function useLiveEvents() {
 
     ws.onerror = () => {
       if (!mountedRef.current) return;
-      console.warn('[useLiveEvents] WebSocket error, will reconnect');
       setStatus('Reconnecting...');
     };
-  }, []);
-
-  useEffect(() => {
-    refreshCallback = () => loadLocalEvents();
-    return () => { refreshCallback = null; };
-  }, [loadLocalEvents]);
-
-  const mountedRef = useRef(false);
+  }, [loadCloudEvents, enqueueEvent]);
 
   useEffect(() => {
     mountedRef.current = true;
-    // Initial load via REST
-    loadLocalEvents();
     loadCloudEvents();
-    // Then connect WebSocket for real-time
     connectWs();
 
     return () => {
       mountedRef.current = false;
+      if (batchTimer.current) {
+        clearTimeout(batchTimer.current);
+        batchTimer.current = null;
+      }
       if (reconnectTimer.current) {
         clearTimeout(reconnectTimer.current);
         reconnectTimer.current = null;
       }
       if (wsRef.current) {
-        // Remove handlers before closing to suppress stale errors
         wsRef.current.onopen = null;
         wsRef.current.onmessage = null;
         wsRef.current.onclose = null;

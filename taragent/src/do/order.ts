@@ -143,12 +143,13 @@ export class OrderDO extends DurableObject {
     if (request.method === "POST") {
       const payload = await request.text();
       let eventData = null;
+      let savedId: string | null = null;
 
       try {
         eventData = JSON.parse(payload);
         if (eventData.opcode && eventData.streamid) {
           const scope = eventData.scope || DEFAULT_SCOPE;
-          await this.saveCloudEvent({
+          savedId = await this.saveCloudEvent({
             opcode: eventData.opcode,
             streamid: eventData.streamid,
             delta: eventData.delta,
@@ -160,12 +161,23 @@ export class OrderDO extends DurableObject {
         console.log('[OrderDO] JSON parse error:', e.message);
       }
 
-      // Broadcast to all WebSocket clients
+      // Broadcast the saved event (with id + timestamp) so clients can dedup
+      const broadcastMsg = savedId && eventData
+        ? JSON.stringify({
+            id: savedId,
+            opcode: eventData.opcode,
+            streamid: eventData.streamid,
+            delta: eventData.delta ?? 0,
+            payload: eventData.payload || {},
+            scope: eventData.scope || DEFAULT_SCOPE,
+            timestamp: new Date().toISOString(),
+          })
+        : payload;
       const sockets = this.ctx.getWebSockets();
       for (const ws of sockets) {
-        try { ws.send(payload); } catch (e) {}
+        try { ws.send(broadcastMsg); } catch (e) {}
       }
-      return new Response(JSON.stringify({ broadcast: true, saved: !!eventData }), {
+      return new Response(JSON.stringify({ broadcast: true, saved: !!savedId }), {
         status: 200,
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
       });
@@ -257,6 +269,7 @@ export class OrderDO extends DurableObject {
   webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
     const messageStr = typeof message === 'string' ? message : new TextDecoder().decode(message);
     let eventData: any = null;
+    let broadcastMsg = messageStr;
 
     try {
       eventData = JSON.parse(messageStr);
@@ -265,24 +278,43 @@ export class OrderDO extends DurableObject {
         this.eventExists(eventData.opcode, eventData.streamid, scope, 5)
           .then(async (exists) => {
             if (!exists) {
-              await this.saveCloudEvent({
+              const savedId = await this.saveCloudEvent({
                 opcode: eventData.opcode,
                 streamid: eventData.streamid,
                 delta: eventData.delta,
                 payload: eventData.payload,
                 scope: scope,
               });
+              // Broadcast saved event with id to other clients
+              if (savedId) {
+                const saved = JSON.stringify({
+                  id: savedId,
+                  opcode: eventData.opcode,
+                  streamid: eventData.streamid,
+                  delta: eventData.delta ?? 0,
+                  payload: eventData.payload || {},
+                  scope,
+                  timestamp: new Date().toISOString(),
+                });
+                const sockets = this.ctx.getWebSockets();
+                for (const session of sockets) {
+                  if (session !== ws) {
+                    try { session.send(saved); } catch (e) {}
+                  }
+                }
+              }
             }
           })
           .catch(err => console.error('[OrderDO] Deduplication check failed:', err));
+        return; // broadcast handled in the async chain above
       }
     } catch (e) {}
 
-    // Broadcast to all other WebSocket clients
+    // Non-event messages: broadcast as-is
     const sockets = this.ctx.getWebSockets();
     for (const session of sockets) {
       if (session !== ws) {
-        try { session.send(messageStr); } catch (e) {}
+        try { session.send(broadcastMsg); } catch (e) {}
       }
     }
   }

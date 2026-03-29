@@ -17,7 +17,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { STATE_TYPES, StateTypeDef } from '../src/config/stateSchemas';
 import { getAllStates } from '../src/db/turso';
 import { createTask } from '../src/db/eventsDb';
-import { triggerLiveEventsRefresh } from '../hooks/useLiveEvents';
 import { OrderScreen } from './OrderScreen';
 
 interface Props {
@@ -27,11 +26,14 @@ interface Props {
   onSelectStateForInstance: (state: { ucode: string; title: string }) => void;
 }
 
+import { router } from 'expo-router';
+
 // Add Tasks, Order, and Inventory as special type options
 export const MEMORY_TYPES: (StateTypeDef | { type: string; label: string; icon: string; color: string })[] = [
   { type: 'tasks', label: 'Tasks', icon: 'checkbox-outline', color: '#5856D6' },
   { type: 'order', label: 'Order', icon: 'cart-outline', color: '#007AFF' },
   { type: 'inventory', label: 'Inventory Item', icon: 'cube-outline', color: '#34C759' },
+  { type: 'tokens', label: 'Tokens', icon: 'server-outline', color: '#FF9500' },
   ...STATE_TYPES,
 ];
 
@@ -79,6 +81,10 @@ export function AddMemories({ visible, onClose, onSelect, onSelectStateForInstan
       // Show task creation form
       console.log('[addmemories] Opening task creation form');
       setShowTaskForm(true);
+    } else if (item.type === 'tokens') {
+      console.log('[addmemories] Opening tokens screen');
+      router.push('/tokens');
+      onClose();
     } else {
       console.log('[addmemories] Selecting memory type:', item.type);
       onSelect(item as StateTypeDef);
@@ -112,10 +118,6 @@ export function AddMemories({ visible, onClose, onSelect, onSelectStateForInstan
       console.log('[addmemories] createTask result:', result);
       
       if (result.success) {
-        console.log('[addmemories] Task created successfully, triggering instant refresh');
-        // Trigger instant refresh in workspace
-        triggerLiveEventsRefresh();
-        
         setShowTaskForm(false);
         setTaskTitle('');
         setTaskDescription('');
@@ -191,7 +193,7 @@ export function AddMemories({ visible, onClose, onSelect, onSelectStateForInstan
             <FlatList
               data={states}
               keyExtractor={(item) => item.ucode}
-              contentContainerStyle={styles.list}
+              contentContainerStyle={[styles.list, { paddingBottom: Math.max(insets.bottom, 40) }]}
               renderItem={({ item }) => (
                 <TouchableOpacity
                   style={styles.row}
@@ -246,7 +248,7 @@ export function AddMemories({ visible, onClose, onSelect, onSelectStateForInstan
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.taskForm} contentContainerStyle={styles.taskFormContent}>
+          <ScrollView style={styles.taskForm} contentContainerStyle={[styles.taskFormContent, { paddingBottom: Math.max(insets.bottom, 20) }]}>
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Title *</Text>
               <TextInput
@@ -326,7 +328,7 @@ export function AddMemories({ visible, onClose, onSelect, onSelectStateForInstan
         <FlatList
           data={MEMORY_TYPES}
           keyExtractor={(item) => item.type}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: Math.max(insets.bottom, 40) }]}
           renderItem={({ item }) => (
             <TouchableOpacity
               style={styles.row}

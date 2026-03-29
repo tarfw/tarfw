@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx wrangler:*)"
+      "Bash(npx wrangler:*)",
+      "Bash(ls:*)",
+      "Bash(xargs grep:*)",
+      "Bash(curl:*)"
     ]
   }
 }
