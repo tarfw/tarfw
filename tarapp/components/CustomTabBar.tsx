@@ -14,7 +14,7 @@ import {
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
-import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
+import { Ionicons, Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useKeyboard } from '@/hooks/useKeyboard';
 import { useAgentState } from '@/hooks/useAgentState';
@@ -290,8 +290,6 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
         return <Feather name="square" size={size} color={color} />;
       case 'memories':
         return <Ionicons name="cube-outline" size={size} color={color} />;
-      case 'relay':
-        return <MaterialCommunityIcons name="asterisk" size={size} color={color} />;
       default:
         return null;
     }
@@ -455,43 +453,18 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
                   >
                     <Ionicons name="search" size={20} color="#8E8E93" />
                   </TouchableOpacity>
-                  {isAgentsTab && (() => {
-                    const route = state.routes[3];
-                    const isFocused = state.index === 3;
-                    const onPress = () => {
+                  <TouchableOpacity
+                    onPress={() => {
                       if (process.env.EXPO_OS === 'ios') {
                         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                       }
-                      navigation.navigate(route.name);
-                    };
-                    return (
-                      <TouchableOpacity
-                        onPress={onPress}
-                        activeOpacity={0.7}
-                        style={[
-                          styles.toggleTab,
-                          isFocused && styles.toggleTabActive,
-                        ]}
-                      >
-                        {renderIcon(route.name, isFocused)}
-                      </TouchableOpacity>
-                    );
-                  })()}
-                  
-                  {!isAgentsTab && (
-                    <TouchableOpacity
-                      onPress={() => {
-                        if (process.env.EXPO_OS === 'ios') {
-                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                        }
-                        setPickerVisible(true);
-                      }}
-                      activeOpacity={0.7}
-                      style={styles.toggleTab}
-                    >
-                      <Ionicons name="add" size={24} color="#8E8E93" />
-                    </TouchableOpacity>
-                  )}
+                      setPickerVisible(true);
+                    }}
+                    activeOpacity={0.7}
+                    style={styles.toggleTab}
+                  >
+                    <Ionicons name="arrow-up" size={20} color="#8E8E93" />
+                  </TouchableOpacity>
                 </View>
               </View>
             </View>

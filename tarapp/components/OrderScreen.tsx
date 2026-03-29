@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { getAllInstances, updateInstance, Instance } from '../src/db/turso';
+import { getAllInstances, Instance } from '../src/db/turso';
 import { pushCloudEventApi } from '../src/api/client';
 
 function generateUUID(): string {
@@ -119,17 +119,15 @@ export function OrderScreen({ onClose, onCancel }: Props) {
           scope: 'shop:main',
         });
         await Promise.all(
-          capturedItems.map(async (li) => {
-            await pushCloudEventApi({
+          capturedItems.map((li) =>
+            pushCloudEventApi({
               opcode: 104,
               streamid,
               delta: -li.qty,
               payload: { stateid: li.instance.stateid, instanceId: li.instance.id, reason: 'order' },
               scope: 'shop:main',
-            });
-            const currentQty = li.instance.qty || 0;
-            await updateInstance(li.instance.id, { qty: currentQty - li.qty });
-          })
+            })
+          )
         );
         console.log('[OrderScreen] Cloud sync complete for', streamid);
       } catch (e: any) {

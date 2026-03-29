@@ -6,10 +6,9 @@ import {
   ActivityIndicator,
   ScrollView,
 } from 'react-native';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { useAgentState } from '@/hooks/useAgentState';
 import { getStateType } from '../config/stateSchemas';
-import { useLiveEvents } from '@/hooks/useLiveEvents';
 
 // ─── TAR Opcode Metadata ───────────────────────────────────────────────────
 
@@ -86,7 +85,6 @@ function getOpcodeMeta(opcode: number) {
 
 export default function AgentsScreen() {
   const { loading, result } = useAgentState();
-  const { events: traces } = useLiveEvents();
 
   const renderResults = () => {
     if (!result) return null;
@@ -184,22 +182,6 @@ export default function AgentsScreen() {
         )}
  
         {renderResults()}
- 
-        {traces.length > 0 && (
-          <View style={styles.workspaceSection}>
-            <Text style={styles.workspaceSectionTitle}>Recent Activity</Text>
-            {traces.slice(0, 10).map((trace, i) => {
-              const meta = getOpcodeMeta(trace.opcode);
-              return (
-                <View key={i} style={styles.workspaceRowFlat}>
-                  <Text style={[styles.workspaceOpFlat, { color: meta.color }]}>{meta.name}</Text>
-                  <Text style={styles.workspaceTargetFlat}>{trace.streamid}</Text>
-                  <Text style={styles.workspaceTimeFlat}>{trace.timestamp}</Text>
-                </View>
-              );
-            })}
-          </View>
-        )}
       </ScrollView>
     </View>
   );
@@ -262,25 +244,4 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 16, fontWeight: '700', color: '#1C1C1E' },
   cardUcode: { fontSize: 12, color: '#AEAEB2' },
   cardPayload: { fontSize: 13, color: '#8E8E93', marginTop: 4 },
-
-  // Recent Activity (Flat List)
-  workspaceSection: { marginTop: 40 },
-  workspaceSectionTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#8E8E93',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: 8,
-  },
-  workspaceRowFlat: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#F2F2F7',
-  },
-  workspaceOpFlat: { fontSize: 10, fontWeight: '800', width: 90 },
-  workspaceTargetFlat: { fontSize: 13, fontWeight: '600', color: '#3A3A3C', flex: 1 },
-  workspaceTimeFlat: { fontSize: 11, color: '#AEAEB2' },
 });

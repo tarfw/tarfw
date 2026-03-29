@@ -8,6 +8,7 @@ export interface LiveEvent {
   delta: number;
   streamid: string;
   title?: string;
+  stateid?: string;
   status: string;
   timestamp: string;
   rawTimestamp?: string;
@@ -16,9 +17,11 @@ export interface LiveEvent {
 
 function parseCloudEvent(ev: any): LiveEvent {
   let title: string | undefined;
+  let stateid: string | undefined;
   try {
     const payload = ev.payload ? (typeof ev.payload === 'string' ? JSON.parse(ev.payload) : ev.payload) : null;
     title = payload?.title || undefined;
+    stateid = payload?.stateid || undefined;
   } catch (e) {}
 
   const rawTimestamp = ev.timestamp || new Date().toISOString();
@@ -30,6 +33,7 @@ function parseCloudEvent(ev: any): LiveEvent {
     delta: ev.delta || 0,
     streamid: ev.streamid,
     title,
+    stateid,
     status: 'cloud',
     timestamp: ev.timestamp ? new Date(ev.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString(),
     rawTimestamp,

@@ -159,36 +159,39 @@ export default function Workspace() {
         {card.events.map((ev, idx) => {
           const meta = getMeta(ev.opcode);
           const displayText = ev.title || '';
+          const deltaStr = ev.delta !== 0 ? `${ev.delta > 0 ? '+' : ''}${ev.delta}` : '—';
 
           return (
             <View key={ev.id || idx} style={styles.cardEvent}>
               <Text style={[styles.eventOpcode, { color: meta.color }]}>
                 {meta.name}
               </Text>
+              {ev.stateid ? (
+                <Text style={styles.eventStateId} numberOfLines={1}>
+                  {ev.stateid}
+                </Text>
+              ) : null}
               {displayText ? (
                 <Text style={styles.eventDetail} numberOfLines={1}>
                   {displayText}
                 </Text>
               ) : null}
-              <View style={styles.eventRight}>
-                <Text style={styles.eventTime}>{ev.timestamp}</Text>
-                <Text
-                  style={[
-                    styles.eventDelta,
-                    {
-                      color:
-                        ev.delta < 0
-                          ? '#FF3B30'
-                          : ev.delta > 0
-                          ? '#34C759'
-                          : '#8E8E93',
-                    },
-                  ]}
-                >
-                  {ev.delta > 0 ? '+' : ''}
-                  {ev.delta !== 0 ? `${ev.delta}` : '—'}
-                </Text>
-              </View>
+              <Text
+                style={[
+                  styles.eventDelta,
+                  {
+                    color:
+                      ev.delta < 0
+                        ? '#FF3B30'
+                        : ev.delta > 0
+                        ? '#34C759'
+                        : '#8E8E93',
+                  },
+                ]}
+              >
+                {deltaStr}
+              </Text>
+              <Text style={styles.eventTime}>{ev.timestamp}</Text>
             </View>
           );
         })}
@@ -304,17 +307,20 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     width: 100,
   },
+  eventStateId: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#3A3A3C',
+    marginLeft: 6,
+    maxWidth: 100,
+  },
   eventDetail: {
     flex: 1,
     fontSize: 13,
     fontWeight: '500',
     color: '#1C1C1E',
-    marginLeft: 0,
+    marginLeft: 6,
   },
-  eventRight: {
-    alignItems: 'flex-end',
-    marginLeft: 'auto',
-  },
-  eventTime: { fontSize: 10, color: '#AEAEB2' },
-  eventDelta: { fontSize: 14, fontWeight: '800' },
+  eventDelta: { fontSize: 14, fontWeight: '800', marginLeft: 'auto', minWidth: 36, textAlign: 'right' },
+  eventTime: { fontSize: 10, color: '#AEAEB2', marginLeft: 6, minWidth: 50, textAlign: 'right' },
 });

@@ -34,6 +34,8 @@ export const MEMORY_TYPES: (StateTypeDef | { type: string; label: string; icon: 
   { type: 'order', label: 'Order', icon: 'cart-outline', color: '#007AFF' },
   { type: 'inventory', label: 'Inventory Item', icon: 'cube-outline', color: '#34C759' },
   { type: 'tokens', label: 'Tokens', icon: 'server-outline', color: '#FF9500' },
+  { type: 'channels', label: 'Channels', icon: 'paper-plane-outline', color: '#0088cc' },
+  { type: 'profile', label: 'Profile', icon: 'person-outline', color: '#8E8E93' },
   ...STATE_TYPES,
 ];
 
@@ -84,6 +86,14 @@ export function AddMemories({ visible, onClose, onSelect, onSelectStateForInstan
     } else if (item.type === 'tokens') {
       console.log('[addmemories] Opening tokens screen');
       router.push('/tokens');
+      onClose();
+    } else if (item.type === 'channels') {
+      console.log('[addmemories] Opening channels screen');
+      router.push('/channels');
+      onClose();
+    } else if (item.type === 'profile') {
+      console.log('[addmemories] Opening profile screen');
+      router.push('/profile');
       onClose();
     } else {
       console.log('[addmemories] Selecting memory type:', item.type);
