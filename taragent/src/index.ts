@@ -582,60 +582,6 @@ app.post('/api/event', async (c) => {
 });
 
 // Server-Sent Events (SSE) for real-time updates - more reliable than WebSocket
-app.get('/api/live/:scope', async (c) => {
-  const scope = c.req.param('scope');
-  
-  if (!c.env.ORDER_DO) {
-    return new Response('ORDER_DO not bound', { status: 500 });
-  }
-
-  // Create a streaming response for SSE
-  const stream = new ReadableStream({
-    async start(controller) {
-      const encoder = new TextEncoder();
-      
-      // Send initial connection message
-      controller.enqueue(encoder.encode(`data: {"type":"connected","scope":"${scope}"}\n\n`));
-      
-      // Poll for new events every 3 seconds and send via SSE
-      const interval = setInterval(async () => {
-        try {
-          const id = c.env.ORDER_DO!.idFromName(scope);
-          const stub = c.env.ORDER_DO!.get(id);
-          const response = await stub.fetch(new Request(`http://localhost/api/events?limit=5&scope=${scope}`, { method: 'GET' }));
-          
-          if (response.ok) {
-            const events = await response.json();
-            if (events && events.length > 0) {
-              // Send each event as SSE
-              for (const event of events) {
-                controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
-              }
-            }
-          }
-        } catch (e) {
-          console.error('[SSE] Poll error:', e);
-        }
-      }, 3000);
-      
-      // Clean up on close
-      c.req.raw.signal.addEventListener('abort', () => {
-        clearInterval(interval);
-        controller.close();
-      });
-    }
-  });
-
-  return new Response(stream, {
-    headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-      'Access-Control-Allow-Origin': '*',
-    },
-  });
-});
-
 // ─── /api/events/:scope — Get persisted cloud events from DO SQLite ───
 app.get('/api/events/:scope', async (c) => {
   const scope = c.req.param('scope');
