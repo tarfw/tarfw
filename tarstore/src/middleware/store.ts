@@ -12,22 +12,20 @@ const DEFAULT_THEME: ThemeConfig = {
   spacing: 'normal',
 };
 
-/** Extract store slug and basePath from subdomain or path */
-function getRoutingInfo(url: URL): { slug: string; basePath: string } | null {
+/** Extract store slug from subdomain or path */
+function extractSlug(url: URL): string | null {
   const host = url.hostname;
 
-  // Subdomain: storea.tarai.space → slug="storea", basePath=""
+  // Subdomain: ramstore.tarshop.com → "ramstore"
   const parts = host.split('.');
   if (parts.length >= 3) {
     const sub = parts[0];
-    if (sub !== 'www' && sub !== 'tarstore') return { slug: sub, basePath: '' };
+    if (sub !== 'www' && sub !== 'tarstore') return sub;
   }
 
-  // Path: /storea or /storea/products → slug="storea", basePath="/storea"
+  // Path: /ramstore or /ramstore/products → "ramstore"
   const seg = url.pathname.split('/')[1];
-  if (seg && !['api', 'assets', 'favicon.ico', 'health'].includes(seg)) {
-    return { slug: seg, basePath: `/${seg}` };
-  }
+  if (seg && !['api', 'assets', 'favicon.ico'].includes(seg)) return seg;
 
   return null;
 }
@@ -35,17 +33,15 @@ function getRoutingInfo(url: URL): { slug: string; basePath: string } | null {
 /** Middleware: resolve slug → scope, load store config */
 export async function storeMiddleware(c: Context<{ Bindings: Bindings; Variables: Variables }>, next: Next) {
   const url = new URL(c.req.url);
-  const info = getRoutingInfo(url);
+  const slug = extractSlug(url);
 
-  if (!info) {
+  if (!slug) {
     return c.html('<h1>Store not found</h1><p>Please access via a store URL.</p>', 404);
   }
 
-  const { slug, basePath } = info;
   const scope = `shop:${slug}`;
   c.set('scope', scope);
   c.set('slug', slug);
-  c.set('basePath', basePath);
 
   // Load store config
   const db = getStatesDb(c.env.STATES_DB_URL, c.env.STATES_DB_TOKEN);

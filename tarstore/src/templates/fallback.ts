@@ -14,10 +14,11 @@ function fmtPrice(val: number | null | undefined, sym: string): string {
 
 // ─── Shared Layout Pieces ───
 
-export function nav(store: StoreData['store'], base: string, cart: Cart): string {
+export function nav(store: StoreData['store'], slug: string, cart: Cart): string {
+  const base = `/${slug}`;
   const count = cartCount(cart);
   return `<nav style="display:flex;align-items:center;justify-content:space-between;padding:16px 40px;border-bottom:1px solid var(--border);background:var(--bg);position:sticky;top:0;z-index:100;backdrop-filter:blur(12px)">
-  <a href="${base || '/'}" style="font-family:var(--font-display);font-size:22px;font-weight:600;text-decoration:none;color:var(--text)">${esc(store.name)}</a>
+  <a href="${base}" style="font-family:var(--font-display);font-size:22px;font-weight:600;text-decoration:none;color:var(--text)">${esc(store.name)}</a>
   <div style="display:flex;gap:24px;align-items:center;font-size:14px">
     <a href="${base}/products" style="text-decoration:none;color:var(--text-muted)">Products</a>
     <a href="${base}/cart" style="text-decoration:none;color:var(--text-muted);position:relative">Cart${count > 0 ? ` <span style="background:var(--primary);color:var(--bg);font-size:11px;padding:2px 7px;border-radius:10px;margin-left:4px">${count}</span>` : ''}</a>
@@ -25,7 +26,8 @@ export function nav(store: StoreData['store'], base: string, cart: Cart): string
 </nav>`;
 }
 
-export function footer(store: StoreData['store'], base: string): string {
+export function footer(store: StoreData['store'], slug: string): string {
+  const base = `/${slug}`;
   return `<footer style="padding:48px 40px;border-top:1px solid var(--border);text-align:center;color:var(--text-muted);font-size:13px;margin-top:80px">
   <div style="display:flex;gap:24px;justify-content:center;margin-bottom:16px">
     <a href="${base}/page/about" style="text-decoration:none;color:var(--text-muted)">About</a>
@@ -38,8 +40,9 @@ export function footer(store: StoreData['store'], base: string): string {
 
 // ─── Pages ───
 
-export function homePage(store: StoreData['store'], products: ProductData[], categories: CategoryData[], base: string, cart: Cart): string {
+export function homePage(store: StoreData['store'], products: ProductData[], categories: CategoryData[], slug: string, cart: Cart): string {
   const sym = store.currencySymbol || '₹';
+  const base = `/${slug}`;
 
   const heroHtml = `<section style="min-height:60vh;display:flex;align-items:center;padding:80px 40px;background:linear-gradient(135deg,var(--bg) 0%,var(--surface) 100%)">
   <div style="max-width:600px">
@@ -63,7 +66,7 @@ export function homePage(store: StoreData['store'], products: ProductData[], cat
   </div>
 </section>` : '';
 
-  return nav(store, base, cart) + heroHtml + catsHtml + prodsHtml + footer(store, base);
+  return nav(store, slug, cart) + heroHtml + catsHtml + prodsHtml + footer(store, slug);
 }
 
 export function productCard(p: ProductData, sym: string, base: string): string {
@@ -78,10 +81,11 @@ export function productCard(p: ProductData, sym: string, base: string): string {
 </a>`;
 }
 
-export function catalogPage(store: StoreData['store'], products: ProductData[], categories: CategoryData[], base: string, cart: Cart, activeCategory?: string): string {
+export function catalogPage(store: StoreData['store'], products: ProductData[], categories: CategoryData[], slug: string, cart: Cart, activeCategory?: string): string {
   const sym = store.currencySymbol || '₹';
+  const base = `/${slug}`;
 
-  return nav(store, base, cart) + `<section style="padding:40px">
+  return nav(store, slug, cart) + `<section style="padding:40px">
   <h1 style="font-family:var(--font-display);font-size:32px;font-weight:400;margin-bottom:24px">Products</h1>
   ${categories.length > 0 ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:32px">
     <a href="${base}/products" style="padding:8px 20px;border-radius:20px;font-size:13px;text-decoration:none;${!activeCategory ? 'background:var(--primary);color:var(--bg)' : 'background:var(--surface);color:var(--text);border:1px solid var(--border)'}"}>All</a>
@@ -91,11 +95,12 @@ export function catalogPage(store: StoreData['store'], products: ProductData[], 
     ${products.map(p => productCard(p, sym, base)).join('')}
   </div>
   ${products.length === 0 ? '<p style="color:var(--text-muted);padding:40px 0;text-align:center">No products yet.</p>' : ''}
-</section>` + footer(store, base);
+</section>` + footer(store, slug);
 }
 
-export function productDetailPage(store: StoreData['store'], product: ProductData, base: string, cart: Cart): string {
+export function productDetailPage(store: StoreData['store'], product: ProductData, slug: string, cart: Cart): string {
   const sym = store.currencySymbol || '₹';
+  const base = `/${slug}`;
   const p = product.payload || {};
   const price = product.instance?.value ?? p.price;
   const images: string[] = p.images || [];
@@ -104,7 +109,7 @@ export function productDetailPage(store: StoreData['store'], product: ProductDat
   const qty = product.instance?.qty;
   const available = product.instance?.available !== false;
 
-  return nav(store, base, cart) + `<section style="padding:60px 40px;display:grid;grid-template-columns:1fr 1fr;gap:60px;max-width:1100px;margin:0 auto">
+  return nav(store, slug, cart) + `<section style="padding:60px 40px;display:grid;grid-template-columns:1fr 1fr;gap:60px;max-width:1100px;margin:0 auto">
   <div>
     ${images.length > 0 ? `<img src="${esc(images[0])}" alt="${esc(product.title)}" style="width:100%;border-radius:var(--radius);aspect-ratio:1;object-fit:cover">` : `<div style="aspect-ratio:1;background:var(--surface);border-radius:var(--radius)"></div>`}
     ${images.length > 1 ? `<div style="display:flex;gap:8px;margin-top:12px">${images.slice(1, 5).map(img => `<img src="${esc(img)}" style="width:64px;height:64px;object-fit:cover;border-radius:4px;border:1px solid var(--border);cursor:pointer" loading="lazy">`).join('')}</div>` : ''}
@@ -122,14 +127,15 @@ export function productDetailPage(store: StoreData['store'], product: ProductDat
     ${qty != null ? `<p style="font-size:13px;color:var(--text-muted);text-align:center">${qty > 0 ? `${qty} in stock` : 'Out of stock'}</p>` : ''}
     ${p.sku ? `<p style="font-size:12px;color:var(--text-muted);margin-top:24px">SKU: ${esc(p.sku)}</p>` : ''}
   </div>
-</section>` + footer(store, base);
+</section>` + footer(store, slug);
 }
 
-export function cartPage(store: StoreData['store'], cart: Cart, base: string): string {
+export function cartPage(store: StoreData['store'], cart: Cart, slug: string): string {
   const sym = store.currencySymbol || '₹';
+  const base = `/${slug}`;
   const total = cartTotal(cart);
 
-  return nav(store, base, cart) + `<section style="padding:40px;max-width:800px;margin:0 auto">
+  return nav(store, slug, cart) + `<section style="padding:40px;max-width:800px;margin:0 auto">
   <h1 style="font-family:var(--font-display);font-size:32px;font-weight:400;margin-bottom:32px">Your Cart</h1>
   ${cart.items.length === 0 ? `<div style="text-align:center;padding:60px 0">
     <p style="color:var(--text-muted);margin-bottom:24px">Your cart is empty.</p>
@@ -155,21 +161,22 @@ export function cartPage(store: StoreData['store'], cart: Cart, base: string): s
     </div>
     <a href="${base}/checkout" style="display:block;text-align:center;padding:16px;background:var(--primary);color:var(--bg);text-decoration:none;border-radius:var(--radius);font-size:14px;letter-spacing:1px;text-transform:uppercase;transition:opacity 0.3s">Proceed to Checkout</a>
   </div>`}
-</section>` + footer(store, base);
+</section>` + footer(store, slug);
 }
 
-export function checkoutPage(store: StoreData['store'], cart: Cart, base: string): string {
+export function checkoutPage(store: StoreData['store'], cart: Cart, slug: string): string {
   const sym = store.currencySymbol || '₹';
+  const base = `/${slug}`;
   const total = cartTotal(cart);
 
   if (cart.items.length === 0) {
-    return nav(store, base, cart) + `<section style="padding:60px 40px;text-align:center">
+    return nav(store, slug, cart) + `<section style="padding:60px 40px;text-align:center">
       <p>Your cart is empty.</p>
       <a href="${base}/products" style="display:inline-block;margin-top:16px;padding:12px 32px;background:var(--primary);color:var(--bg);text-decoration:none;border-radius:var(--radius)">Shop Now</a>
-    </section>` + footer(store, base);
+    </section>` + footer(store, slug);
   }
 
-  return nav(store, base, cart) + `<section style="padding:40px;max-width:700px;margin:0 auto">
+  return nav(store, slug, cart) + `<section style="padding:40px;max-width:700px;margin:0 auto">
   <h1 style="font-family:var(--font-display);font-size:32px;font-weight:400;margin-bottom:32px">Checkout</h1>
   <form method="POST" action="${base}/checkout">
     <fieldset style="border:none;padding:0;margin-bottom:32px">
@@ -194,31 +201,33 @@ export function checkoutPage(store: StoreData['store'], cart: Cart, base: string
     <button type="submit" style="display:block;width:100%;padding:16px;background:var(--primary);color:var(--bg);border:none;font-size:14px;letter-spacing:1px;text-transform:uppercase;cursor:pointer;border-radius:var(--radius);margin-bottom:12px">Place Order</button>
     ${store.phone ? `<a href="https://wa.me/${store.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent('New Order:\n' + cart.items.map(i => `${i.qty}x ${i.title} ${fmtPrice(i.price * i.qty, sym)}`).join('\n') + `\nTotal: ${fmtPrice(total, sym)}`)}" target="_blank" style="display:block;text-align:center;padding:14px;background:#25D366;color:white;text-decoration:none;border-radius:var(--radius);font-size:14px">Order via WhatsApp</a>` : ''}
   </form>
-</section>` + footer(store, base);
+</section>` + footer(store, slug);
 }
 
-export function orderConfirmPage(store: StoreData['store'], orderId: string, base: string): string {
-  return nav(store, base, { items: [] }) + `<section style="padding:80px 40px;text-align:center;max-width:600px;margin:0 auto">
+export function orderConfirmPage(store: StoreData['store'], orderId: string, slug: string): string {
+  const base = `/${slug}`;
+  return nav(store, slug, { items: [] }) + `<section style="padding:80px 40px;text-align:center;max-width:600px;margin:0 auto">
   <div style="font-size:48px;margin-bottom:16px">&#10003;</div>
   <h1 style="font-family:var(--font-display);font-size:28px;font-weight:400;margin-bottom:12px">Order Placed!</h1>
   <p style="color:var(--text-muted);margin-bottom:8px">Order ID: <code style="background:var(--surface);padding:2px 8px;border-radius:4px">${esc(orderId)}</code></p>
   <p style="color:var(--text-muted);margin-bottom:32px">We'll reach out with updates soon.</p>
-  <a href="${base || '/'}" style="display:inline-block;padding:12px 32px;background:var(--primary);color:var(--bg);text-decoration:none;border-radius:var(--radius)">Back to Store</a>
-</section>` + footer(store, base);
+  <a href="${base}" style="display:inline-block;padding:12px 32px;background:var(--primary);color:var(--bg);text-decoration:none;border-radius:var(--radius)">Back to Store</a>
+</section>` + footer(store, slug);
 }
 
-export function cmsPage(store: StoreData['store'], page: { title: string; payload: Record<string, any> }, base: string, cart: Cart): string {
+export function cmsPage(store: StoreData['store'], page: { title: string; payload: Record<string, any> }, slug: string, cart: Cart): string {
   const content = page.payload?.content || '';
-  return nav(store, base, cart) + `<section style="padding:60px 40px;max-width:700px;margin:0 auto">
+  return nav(store, slug, cart) + `<section style="padding:60px 40px;max-width:700px;margin:0 auto">
   <h1 style="font-family:var(--font-display);font-size:32px;font-weight:400;margin-bottom:24px">${esc(page.title || '')}</h1>
   <div style="line-height:1.8;color:var(--text-muted)">${content}</div>
-</section>` + footer(store, base);
+</section>` + footer(store, slug);
 }
 
-export function searchPage(store: StoreData['store'], products: ProductData[], query: string, base: string, cart: Cart): string {
+export function searchPage(store: StoreData['store'], products: ProductData[], query: string, slug: string, cart: Cart): string {
   const sym = store.currencySymbol || '₹';
+  const base = `/${slug}`;
 
-  return nav(store, base, cart) + `<section style="padding:40px">
+  return nav(store, slug, cart) + `<section style="padding:40px">
   <form action="${base}/search" method="GET" style="margin-bottom:32px">
     <input name="q" value="${esc(query)}" placeholder="Search products..." style="width:100%;max-width:400px;padding:12px 16px;border:1px solid var(--border);border-radius:var(--radius);font-size:14px;font-family:inherit">
   </form>
@@ -227,13 +236,14 @@ export function searchPage(store: StoreData['store'], products: ProductData[], q
     ${products.map(p => productCard(p, sym, base)).join('')}
   </div>
   ${products.length === 0 && query ? '<p style="text-align:center;padding:40px;color:var(--text-muted)">No products found.</p>' : ''}
-</section>` + footer(store, base);
+</section>` + footer(store, slug);
 }
 
-export function notFoundPage(store: StoreData['store'], base: string, cart: Cart): string {
-  return nav(store, base, cart) + `<section style="padding:80px 40px;text-align:center">
+export function notFoundPage(store: StoreData['store'], slug: string, cart: Cart): string {
+  const base = `/${slug}`;
+  return nav(store, slug, cart) + `<section style="padding:80px 40px;text-align:center">
   <h1 style="font-size:48px;font-weight:300;margin-bottom:16px">404</h1>
   <p style="color:var(--text-muted);margin-bottom:24px">Page not found.</p>
-  <a href="${base || '/'}" style="display:inline-block;padding:12px 32px;background:var(--primary);color:var(--bg);text-decoration:none;border-radius:var(--radius)">Back to Store</a>
-</section>` + footer(store, base);
+  <a href="${base}" style="display:inline-block;padding:12px 32px;background:var(--primary);color:var(--bg);text-decoration:none;border-radius:var(--radius)">Back to Store</a>
+</section>` + footer(store, slug);
 }

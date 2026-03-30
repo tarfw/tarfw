@@ -73,7 +73,7 @@ async function renderWithDesignTree(
 // ─── Homepage ───
 store.get('/', async (c) => {
   const scope = c.get('scope');
-  const base = c.get('basePath');
+  const slug = c.get('slug');
   const storeConfig = c.get('storeConfig')!;
   const cart = getCart(c);
 
@@ -103,20 +103,20 @@ store.get('/', async (c) => {
       bodyHtml: designResult.html,
       bodyCss: designResult.css,
       hasAnimations: true,
-      cartJs: cartScript(base),
+      cartJs: cartScript(slug),
     }));
     return withCache(res, CACHE_PRODUCT_LIST);
   }
 
   // Fallback to static templates
-  const bodyHtml = homePage(storeConfig, products, categories, base, cart);
-  return withCache(c.html(wrapPage(storeConfig, 'Home', bodyHtml + cartScript(base))), CACHE_PRODUCT_LIST);
+  const bodyHtml = homePage(storeConfig, products, categories, slug, cart);
+  return withCache(c.html(wrapPage(storeConfig, 'Home', bodyHtml + cartScript(slug))), CACHE_PRODUCT_LIST);
 });
 
 // ─── Products Catalog ───
 store.get('/products', async (c) => {
   const scope = c.get('scope');
-  const base = c.get('basePath');
+  const slug = c.get('slug');
   const storeConfig = c.get('storeConfig')!;
   const cart = getCart(c);
 
@@ -128,14 +128,14 @@ store.get('/products', async (c) => {
     getCategories(statesDb, scope),
   ]);
 
-  const bodyHtml = catalogPage(storeConfig, products, categories, base, cart);
-  return withCache(c.html(wrapPage(storeConfig, 'Products', bodyHtml + cartScript(base))), CACHE_PRODUCT_LIST);
+  const bodyHtml = catalogPage(storeConfig, products, categories, slug, cart);
+  return withCache(c.html(wrapPage(storeConfig, 'Products', bodyHtml + cartScript(slug))), CACHE_PRODUCT_LIST);
 });
 
 // ─── Category ───
 store.get('/category/:ucode', async (c) => {
   const scope = c.get('scope');
-  const base = c.get('basePath');
+  const slug = c.get('slug');
   const storeConfig = c.get('storeConfig')!;
   const cart = getCart(c);
   const ucode = decodeURIComponent(c.req.param('ucode'));
@@ -156,14 +156,14 @@ store.get('/category/:ucode', async (c) => {
   );
 
   const cat = categories.find(cc => cc.ucode === ucode);
-  const bodyHtml = catalogPage(storeConfig, products, categories, base, cart, ucode);
-  return withCache(c.html(wrapPage(storeConfig, cat?.title || catId || 'Category', bodyHtml + cartScript(base))), CACHE_PRODUCT_LIST);
+  const bodyHtml = catalogPage(storeConfig, products, categories, slug, cart, ucode);
+  return withCache(c.html(wrapPage(storeConfig, cat?.title || catId || 'Category', bodyHtml + cartScript(slug))), CACHE_PRODUCT_LIST);
 });
 
 // ─── Product Detail ───
 store.get('/product/:ucode', async (c) => {
   const scope = c.get('scope');
-  const base = c.get('basePath');
+  const slug = c.get('slug');
   const storeConfig = c.get('storeConfig')!;
   const cart = getCart(c);
   const ucode = decodeURIComponent(c.req.param('ucode'));
@@ -173,44 +173,44 @@ store.get('/product/:ucode', async (c) => {
 
   const product = await getProductByUcode(statesDb, ucode, scope);
   if (!product) {
-    return c.html(wrapPage(storeConfig, 'Not Found', notFoundPage(storeConfig, base, cart)), 404);
+    return c.html(wrapPage(storeConfig, 'Not Found', notFoundPage(storeConfig, slug, cart)), 404);
   }
 
   const instance = await getInstanceForProduct(instancesDb, ucode, scope);
   product.instance = instance || { qty: null, value: product.payload?.price || null, currency: 'INR', available: true };
 
-  const bodyHtml = productDetailPage(storeConfig, product, base, cart);
-  return withCache(c.html(wrapPage(storeConfig, product.title || ucode, bodyHtml + cartScript(base))), CACHE_PRODUCT_DETAIL);
+  const bodyHtml = productDetailPage(storeConfig, product, slug, cart);
+  return withCache(c.html(wrapPage(storeConfig, product.title || ucode, bodyHtml + cartScript(slug))), CACHE_PRODUCT_DETAIL);
 });
 
 // ─── Cart Page ───
 store.get('/cart', (c) => {
-  const base = c.get('basePath');
+  const slug = c.get('slug');
   const storeConfig = c.get('storeConfig')!;
   const cart = getCart(c);
 
-  const bodyHtml = cartPage(storeConfig, cart, base);
-  return noCache(c.html(wrapPage(storeConfig, 'Cart', bodyHtml + cartScript(base))));
+  const bodyHtml = cartPage(storeConfig, cart, slug);
+  return noCache(c.html(wrapPage(storeConfig, 'Cart', bodyHtml + cartScript(slug))));
 });
 
 // ─── Checkout (GET = form, POST = place order) ───
 store.get('/checkout', (c) => {
-  const base = c.get('basePath');
+  const slug = c.get('slug');
   const storeConfig = c.get('storeConfig')!;
   const cart = getCart(c);
 
-  const bodyHtml = checkoutPage(storeConfig, cart, base);
+  const bodyHtml = checkoutPage(storeConfig, cart, slug);
   return noCache(c.html(wrapPage(storeConfig, 'Checkout', bodyHtml)));
 });
 
 store.post('/checkout', async (c) => {
-  const base = c.get('basePath');
+  const slug = c.get('slug');
   const scope = c.get('scope');
   const storeConfig = c.get('storeConfig')!;
   const cart = getCart(c);
 
   if (cart.items.length === 0) {
-    return c.redirect(`${base}/cart`);
+    return c.redirect(`/${slug}/cart`);
   }
 
   const body = await c.req.parseBody();
@@ -268,7 +268,7 @@ store.post('/checkout', async (c) => {
   }
 
   // Clear cart
-  const bodyHtml = orderConfirmPage(storeConfig, orderId, base);
+  const bodyHtml = orderConfirmPage(storeConfig, orderId, slug);
   const res = new Response(wrapPage(storeConfig, 'Order Confirmed', bodyHtml), {
     headers: { 'Content-Type': 'text/html; charset=utf-8' },
   });
@@ -278,18 +278,18 @@ store.post('/checkout', async (c) => {
 
 // ─── Order Confirmation ───
 store.get('/order/:id', (c) => {
-  const base = c.get('basePath');
+  const slug = c.get('slug');
   const storeConfig = c.get('storeConfig')!;
   const orderId = c.req.param('id');
 
-  const bodyHtml = orderConfirmPage(storeConfig, orderId, base);
+  const bodyHtml = orderConfirmPage(storeConfig, orderId, slug);
   return c.html(wrapPage(storeConfig, 'Order', bodyHtml));
 });
 
 // ─── CMS Pages ───
 store.get('/page/:slug', async (c) => {
   const scope = c.get('scope');
-  const base = c.get('basePath');
+  const storeSlug = c.get('slug');
   const storeConfig = c.get('storeConfig')!;
   const cart = getCart(c);
   const pageSlug = c.req.param('slug');
@@ -298,17 +298,17 @@ store.get('/page/:slug', async (c) => {
   const page = await getPageBySlug(db, pageSlug, scope);
 
   if (!page) {
-    return c.html(wrapPage(storeConfig, 'Not Found', notFoundPage(storeConfig, base, cart)), 404);
+    return c.html(wrapPage(storeConfig, 'Not Found', notFoundPage(storeConfig, storeSlug, cart)), 404);
   }
 
-  const bodyHtml = cmsPage(storeConfig, page, base, cart);
+  const bodyHtml = cmsPage(storeConfig, page, storeSlug, cart);
   return withCache(c.html(wrapPage(storeConfig, page.title || pageSlug, bodyHtml)), CACHE_STORE_CONFIG);
 });
 
 // ─── Search ───
 store.get('/search', async (c) => {
   const scope = c.get('scope');
-  const base = c.get('basePath');
+  const slug = c.get('slug');
   const storeConfig = c.get('storeConfig')!;
   const cart = getCart(c);
   const query = c.req.query('q') || '';
@@ -328,7 +328,7 @@ store.get('/search', async (c) => {
     );
   }
 
-  const bodyHtml = searchPage(storeConfig, products, query, base, cart);
+  const bodyHtml = searchPage(storeConfig, products, query, slug, cart);
   return withCache(c.html(wrapPage(storeConfig, query ? `Search: ${query}` : 'Search', bodyHtml)), CACHE_PRODUCT_LIST);
 });
 
@@ -382,7 +382,8 @@ store.get('/api/cart', (c) => {
 });
 
 // ─── Cart client JS (injected into pages) ───
-function cartScript(base: string): string {
+function cartScript(slug: string): string {
+  const base = `/${slug}`;
   return `<script>
 function addToCart(u,t,p,img){
   fetch('${base}/api/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ucode:u,title:t,price:p,qty:1,image:img})})

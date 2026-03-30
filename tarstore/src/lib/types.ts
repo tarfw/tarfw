@@ -96,6 +96,5 @@ export type Bindings = {
 export type Variables = {
   scope: string;
   slug: string;
-  basePath: string;
   storeConfig: StoreData['store'] | null;
 };
