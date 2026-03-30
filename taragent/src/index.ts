@@ -453,43 +453,88 @@ const ChannelRequestSchema = z.object({
 app.post('/api/channel', async (c) => {
   try {
     const body = await c.req.json();
-    
+    console.log('[CHANNEL] Raw body:', JSON.stringify(body));
+
     const parsedData = ChannelRequestSchema.safeParse(body);
     if (!parsedData.success) {
+      console.error('[CHANNEL] Validation failed:', JSON.stringify(parsedData.error.errors));
       return c.json({ error: "Invalid request payload", details: parsedData.error.errors }, 400);
     }
 
     const requestData = parsedData.data;
-    
+    console.log('[CHANNEL] Parsed request:', JSON.stringify(requestData));
+    console.log('[CHANNEL] action:', requestData.action, 'scope:', requestData.scope, 'text:', requestData.text);
+
     // Route to Search Agent if explicitly requested or if text starts with "search" (uses states DB)
     if ((requestData.action === "SEARCH" || requestData.text?.toLowerCase().startsWith('search')) && requestData.text) {
+      console.log('[CHANNEL] Routing to SearchAgent');
       const statesDb = getStatesDbClient(c.env.STATES_DB_URL, c.env.STATES_DB_TOKEN);
       const searchAgent = new SearchAgent(statesDb, c.env);
       const result = await searchAgent.processSearch(requestData.text, requestData.scope || "shop:main");
+      console.log('[CHANNEL] SearchAgent result:', JSON.stringify(result));
       return c.json({ success: true, result: { ...result, action: 'SEARCH' } });
     }
 
     // Route to Design Agent for storefront generation/updates
-    if (requestData.action === "DESIGN" || requestData.action === "DESIGN_UPDATE" ||
-        (requestData.text && /^(design|create|build|setup)\s+(my\s+)?(store|shop|site|storefront)/i.test(requestData.text))) {
+    const isDesignRoute = requestData.action === "DESIGN" || requestData.action === "DESIGN_UPDATE" ||
+        (requestData.text && /^(design|create|build|setup)\s+(my\s+)?(store|shop|site|storefront)/i.test(requestData.text));
+    console.log('[CHANNEL] isDesignRoute:', isDesignRoute);
+
+    if (isDesignRoute) {
+      console.log('[CHANNEL] Routing to DesignAgent, action:', requestData.action);
       const statesDb = getStatesDbClient(c.env.STATES_DB_URL, c.env.STATES_DB_TOKEN);
       const designAgent = new DesignAgent(statesDb, c.env);
 
-      if (requestData.action === "DESIGN_UPDATE") {
-        const result = await designAgent.updateDesign({
-          text: requestData.text || '',
-          scope: requestData.scope || 'shop:main',
-          userId: requestData.userId,
-        });
-        return c.json({ success: true, result: { ...result, action: 'DESIGN_UPDATE' } });
+      let scope = requestData.scope || 'shop:main';
+      let action = requestData.action || 'DESIGN';
+
+      // Auto-extract slug and create scope for new stores if user is at shop:main
+      if (action !== 'DESIGN_UPDATE' && scope === 'shop:main' && requestData.text) {
+        const extractSlug = (text: string): string => {
+          // Priority 1: "called X", "named X", "name : X"
+          const namedMatch = text.match(/(?:called|named|name\s*:|name)\s+([a-zA-Z0-9-]+)/i);
+          if (namedMatch) return namedMatch[1].toLowerCase().replace(/[^a-z0-9-]/g, '');
+
+          // Priority 2: "brand X", "by X"
+          const brandMatch = text.match(/(?:brand|by)\s+([a-zA-Z0-9-]+)/i);
+          if (brandMatch) return brandMatch[1].toLowerCase().replace(/[^a-z0-9-]/g, '');
+
+          // Priority 3: "X store", "X bakery"
+          const typeMatch = text.match(/([a-zA-Z0-9-]+)\s+(?:store|shop|bakery|cafe|restaurant|site)/i);
+          if (typeMatch) return typeMatch[1].toLowerCase().replace(/[^a-z0-9-]/g, '');
+
+          // Priority 4: "store X", "bakery X"
+          const storeMatch = text.match(/(?:store|shop|bakery|cafe|restaurant|brand|site)\s+([a-zA-Z0-9-]+)/i);
+          if (storeMatch) return storeMatch[1].toLowerCase().replace(/[^a-z0-9-]/g, '');
+
+          const words = text.toLowerCase().replace(/[^a-z0-9\s-]/g, '').split(/\s+/).filter(w => w.length > 2 && !['create', 'design', 'build', 'make', 'setup', 'my', 'the', 'for', 'store', 'shop'].includes(w));
+          return words[0] || 'mystore';
+        };
+        const generatedSlug = extractSlug(requestData.text);
+        scope = `shop:${generatedSlug}`;
+        action = 'DESIGN';
+        console.log('[CHANNEL] Auto-extracted scope:', scope);
       }
 
+      if (action === "DESIGN_UPDATE") {
+        console.log('[CHANNEL] Calling designAgent.updateDesign()');
+        const result = await designAgent.updateDesign({
+          text: requestData.text || '',
+          scope,
+          userId: requestData.userId,
+        });
+        console.log('[CHANNEL] DesignAgent updateDesign result:', JSON.stringify(result));
+        return c.json({ success: true, result: { ...result, scope, action: 'DESIGN_UPDATE' } });
+      }
+
+      console.log('[CHANNEL] Calling designAgent.generateDesign()');
       const result = await designAgent.generateDesign({
         text: requestData.text || '',
-        scope: requestData.scope || 'shop:main',
+        scope,
         userId: requestData.userId,
       });
-      return c.json({ success: true, result: { ...result, action: 'DESIGN' } });
+      console.log('[CHANNEL] DesignAgent generateDesign result:', JSON.stringify(result));
+      return c.json({ success: true, result: { ...result, scope, action: 'DESIGN' } });
     }
 
     // Natural language → interpreter pipeline (uses instances DB for trace + instance)

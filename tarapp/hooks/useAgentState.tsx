@@ -23,6 +23,11 @@ type AgentState = {
   setPickerVisible: (v: boolean) => void;
   isSearchVisible: boolean;
   setSearchVisible: (v: boolean) => void;
+  // Store mode
+  storeMode: boolean;
+  setStoreMode: (v: boolean) => void;
+  activeScope: string | null;
+  setActiveScope: (v: string | null) => void;
 };
 
 const AgentContext = createContext<AgentState>({
@@ -44,23 +49,38 @@ const AgentContext = createContext<AgentState>({
   setPickerVisible: () => {},
   isSearchVisible: false,
   setSearchVisible: () => {},
+  storeMode: false,
+  setStoreMode: () => {},
+  activeScope: null,
+  setActiveScope: () => {},
 });
 
-const SCOPE = "shop:main";
+const DEFAULT_SCOPE = "shop:main";
 
 export function AgentProvider({ children }: { children: React.ReactNode }) {
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [loading, setLoadingRaw] = useState(false);
+  const [result, setResultRaw] = useState<any>(null);
   const [isPickerVisible, setPickerVisible] = useState(false);
   const [isSearchVisible, setSearchVisible] = useState(false);
+  const [storeMode, setStoreMode] = useState(false);
+  const [activeScope, setActiveScope] = useState<string | null>(null);
+  const setLoading = (v: boolean) => { console.log('[AGENT STATE] setLoading:', v); setLoadingRaw(v); };
+  const setResult = (v: any) => { 
+    console.log('[AGENT STATE] setResult:', JSON.stringify(v)?.substring(0, 500)); 
+    if (v && v.result && v.result.action && v.result.action.startsWith('DESIGN') && v.result.scope) {
+      setActiveScope(v.result.scope);
+      if (!storeMode) setStoreMode(true);
+    }
+    setResultRaw(v); 
+  };
   const searchCounterRef = React.useRef(0);
 
   const loadStates = async () => {
-    setLoading(true);
+    const currentScope = activeScope || DEFAULT_SCOPE;
     searchCounterRef.current++; // Invalidate any pending searches
     try {
       // API-only: fetch states from remote, no local sync
-      const response = await listStatesApi(SCOPE);
+      const response = await listStatesApi(currentScope);
       setResult({ result: response.result || [] });
     } catch (e) {
       console.error('Failed to load states from API:', e);
@@ -72,12 +92,13 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     loadStates();
-  }, []);
+  }, [activeScope]);
 
   const createState = async (ucode: string, title: string, payload: any) => {
+    const currentScope = activeScope || DEFAULT_SCOPE;
     setLoading(true);
     try {
-      const id = await createStateLocal(ucode, title, payload, SCOPE);
+      const id = await createStateLocal(ucode, title, payload, currentScope);
       try {
         const textToEmbed = `${title} ${JSON.stringify(payload)}`.substring(0, 1000);
         const vector = await generateEmbedding(textToEmbed);
@@ -86,17 +107,19 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
         console.warn('Embedding generation failed during create:', e);
       }
       await loadStates();
+      await loadStates();
     } finally {
       setLoading(false);
     }
   };
 
   const updateState = async (ucode: string, title: string, payload: any) => {
+    const currentScope = activeScope || DEFAULT_SCOPE;
     setLoading(true);
     try {
-      await updateStateLocal(ucode, title, payload, SCOPE);
+      await updateStateLocal(ucode, title, payload, currentScope);
       try {
-        const stateId = await getStateIdByUcode(ucode, SCOPE);
+        const stateId = await getStateIdByUcode(ucode, currentScope);
         if (stateId) {
           const textToEmbed = `${title} ${JSON.stringify(payload)}`.substring(0, 1000);
           const vector = await generateEmbedding(textToEmbed);
@@ -112,9 +135,10 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   };
 
   const deleteState = async (ucode: string) => {
+    const currentScope = activeScope || DEFAULT_SCOPE;
     setLoading(true);
     try {
-      await deleteStateLocal(ucode, SCOPE);
+      await deleteStateLocal(ucode, currentScope);
       await loadStates();
     } finally {
       setLoading(false);
@@ -123,7 +147,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
 
   const reindexMissingEmbeddings = async () => {
     try {
-      const missing = await getStatesWithoutEmbeddings(SCOPE);
+      const missing = await getStatesWithoutEmbeddings(DEFAULT_SCOPE);
 
       if (missing.length === 0) return;
 
@@ -158,13 +182,14 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    const currentScope = activeScope || DEFAULT_SCOPE;
     setLoading(true);
     try {
       const vector = await generateEmbedding(trimmedQuery);
       
       // Only update result if this is still the latest search
       if (currentSearchId === searchCounterRef.current) {
-        const results = await searchStates(vector, SCOPE);
+        const results = await searchStates(vector, currentScope);
         setResult({ result: results });
       }
     } catch (e) {
@@ -180,8 +205,9 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
 
   // Instance methods for working state under products/services
   const loadInstances = async (stateid: string): Promise<Instance[]> => {
+    const currentScope = activeScope || DEFAULT_SCOPE;
     try {
-      return await getInstancesByState(stateid, SCOPE);
+      return await getInstancesByState(stateid, currentScope);
     } catch (e) {
       console.error('Failed to load instances:', e);
       return [];
@@ -189,9 +215,10 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   };
 
   const addInstance = async (data: { stateid: string; qty?: number; value?: number; currency?: string; available?: boolean; type?: string }) => {
+    const currentScope = activeScope || DEFAULT_SCOPE;
     setLoading(true);
     try {
-      await createInstance({ ...data, scope: SCOPE });
+      await createInstance({ ...data, scope: currentScope });
     } catch (e) {
       // Silent fail
     } finally {
@@ -205,7 +232,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
       // Convert boolean available to number for API
       const apiData = { ...data };
       if (apiData.available !== undefined) {
-        apiData.available = apiData.available ? 1 : 0 as any;
+        apiData.available = (apiData.available ? 1 : 0) as any;
       }
       await updateInstance(id, apiData);
     } catch (e) {
@@ -228,8 +255,9 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
 
   // Fetch states from remote for instance creation flow
   const fetchStatesFromRemote = async (type?: string): Promise<any[]> => {
+    const currentScope = activeScope || DEFAULT_SCOPE;
     try {
-      const response = await listStatesApi(SCOPE, type, 50);
+      const response = await listStatesApi(currentScope, type, 50);
       return response.result || [];
     } catch (e) {
       console.error('Failed to fetch states from remote:', e);
@@ -259,6 +287,10 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
         setPickerVisible,
         isSearchVisible,
         setSearchVisible,
+        storeMode,
+        setStoreMode,
+        activeScope,
+        setActiveScope,
       }}
     >
       {children}

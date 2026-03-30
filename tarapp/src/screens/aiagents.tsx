@@ -1,14 +1,17 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ActivityIndicator,
   ScrollView,
+  TouchableOpacity,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAgentState } from '@/hooks/useAgentState';
 import { getStateType } from '../config/stateSchemas';
+import { listScopesApi } from '../api/client';
 
 // ─── TAR Opcode Metadata ───────────────────────────────────────────────────
 
@@ -81,15 +84,181 @@ function getOpcodeMeta(opcode: number) {
   return OPCODE_META[opcode] ?? { name: `OPCODE_${opcode}`, color: '#8E8E93', icon: 'flash', family: 'Unknown' };
 }
 
+// ─── Inline Store Pill (replaces title in header when store mode is on) ──────
+
+function StorePill({ activeScope, onChangeScope, onExit }: {
+  activeScope: string | null;
+  onChangeScope: (scope: string) => void;
+  onExit: () => void;
+}) {
+  const [scopes, setScopes] = useState<{ scope: string; role: string }[]>([]);
+  const [showPicker, setShowPicker] = useState(false);
+
+  const slug = activeScope ? activeScope.replace('shop:', '') : null;
+  const storeScopes = scopes.filter((s) => s && s.scope && s.scope !== 'shop:main');
+
+  useEffect(() => {
+    listScopesApi()
+      .then((res) => setScopes(res.scopes || []))
+      .catch(() => {});
+  }, [activeScope]);
+
+  return (
+    <View>
+      {/* Pill in the header */}
+      <View style={selectorStyles.pillRow}>
+        {slug ? (
+          <TouchableOpacity
+            style={selectorStyles.scopePill}
+            onPress={() => setShowPicker(!showPicker)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="storefront-outline" size={14} color="#FF2D55" />
+            <Text style={selectorStyles.scopeText}>{slug}</Text>
+            <Ionicons name={showPicker ? 'chevron-up' : 'chevron-down'} size={12} color="#8E8E93" />
+          </TouchableOpacity>
+        ) : (
+          <View style={selectorStyles.scopePillMuted}>
+            <Ionicons name="storefront-outline" size={14} color="#8E8E93" />
+            <Text style={selectorStyles.scopeTextMuted}>No store</Text>
+          </View>
+        )}
+
+        {slug && (
+          <TouchableOpacity
+            onPress={() => Linking.openURL(`https://${slug}.tarai.space/`)}
+            hitSlop={8}
+            style={{ marginLeft: 8 }}
+          >
+            <Ionicons name="open-outline" size={18} color="#007AFF" />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Scope picker dropdown */}
+      {showPicker && storeScopes.length > 0 && (
+        <View style={selectorStyles.picker}>
+          {storeScopes.map((s) => {
+            const sSlug = s.scope.replace('shop:', '');
+            const isActive = s.scope === activeScope;
+            return (
+              <TouchableOpacity
+                key={s.scope}
+                style={[selectorStyles.pickerItem, isActive && { backgroundColor: '#FFF0F3' }]}
+                onPress={() => { onChangeScope(s.scope); setShowPicker(false); }}
+              >
+                <Text style={[selectorStyles.pickerText, isActive && { color: '#FF2D55' }]}>
+                  {sSlug}
+                </Text>
+                <Text style={selectorStyles.pickerRole}>{s.role}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
+    </View>
+  );
+}
+
+const selectorStyles = StyleSheet.create({
+  pillRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  scopePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FFF0F3',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  scopePillMuted: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F2F2F7',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  scopeText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FF2D55',
+  },
+  scopeTextMuted: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#8E8E93',
+  },
+  picker: {
+    marginTop: 10,
+    backgroundColor: '#F9F9F9',
+    borderRadius: 12,
+    padding: 4,
+  },
+  pickerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  pickerText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1C1C1E',
+    flex: 1,
+  },
+  pickerRole: {
+    fontSize: 11,
+    color: '#8E8E93',
+    textTransform: 'uppercase',
+    fontWeight: '600',
+  },
+});
+
 // ─── Screen ───────────────────────────────────────────────────────────────
 
 export default function AgentsScreen() {
-  const { loading, result } = useAgentState();
+  const { loading, result, storeMode, setStoreMode, activeScope, setActiveScope } = useAgentState();
+  console.log('[AGENTS SCREEN] render — loading:', loading, 'storeMode:', storeMode, 'activeScope:', activeScope, 'result:', !!result);
 
   const renderResults = () => {
-    if (!result) return null;
+    console.log('[AGENTS SCREEN] renderResults called, result:', JSON.stringify(result));
+    if (!result) { console.log('[AGENTS SCREEN] result is null, returning null'); return null; }
 
-    // ── 1. Semantic Search Results ──
+    // ── 1. Design Result ──
+    if (result.result?.action === 'DESIGN' || result.result?.action === 'DESIGN_UPDATE') {
+      const design = result.result;
+      const slug = (activeScope || '').replace('shop:', '');
+      return (
+        <View style={styles.designResult}>
+          <View style={styles.designHeader}>
+            <Ionicons name="checkmark-circle" size={20} color="#34C759" />
+            <Text style={styles.designTitle}>
+              {design.action === 'DESIGN' ? 'Store designed' : 'Design updated'}
+            </Text>
+          </View>
+          {design.storeName && (
+            <Text style={styles.designStoreName}>{design.storeName}</Text>
+          )}
+          <TouchableOpacity
+            style={styles.visitButton}
+            onPress={() => Linking.openURL(`https://${slug}.tarai.space/`)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="globe-outline" size={16} color="#FFF" />
+            <Text style={styles.visitButtonText}>{slug}.tarai.space</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    // ── 2. Semantic Search Results ──
     if (result.result?.action === 'SEARCH') {
       const items: any[] = Array.isArray(result.result.results) ? result.result.results : [];
       if (items.length === 0) {
@@ -132,7 +301,7 @@ export default function AgentsScreen() {
       );
     }
 
-    // ── 2. NL Operation Flat List ──
+    // ── 3. NL Operation Flat List ──
     const op = result.result;
     if (op && typeof op.opcode === 'number') {
       const meta = getOpcodeMeta(op.opcode);
@@ -153,10 +322,10 @@ export default function AgentsScreen() {
         </View>
       );
     }
- 
+
     return null;
   };
- 
+
   return (
     <View style={styles.container}>
       <ScrollView
@@ -164,23 +333,41 @@ export default function AgentsScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.headerRow}>
-          <Text style={styles.headerTitle}>Agents</Text>
+          {storeMode ? (
+            <StorePill
+              activeScope={activeScope}
+              onChangeScope={setActiveScope}
+              onExit={() => { setStoreMode(false); setActiveScope(null); }}
+            />
+          ) : (
+            <Text style={styles.headerTitle}>Agents</Text>
+          )}
         </View>
- 
-        {!result && !loading && (
+
+        {!result && !loading && !storeMode && (
           <View style={styles.empty}>
             <Text style={styles.emptyText}>Ask anything</Text>
             <Text style={styles.emptySub}>sell 2 shoes · create order · search products · start task…</Text>
           </View>
         )}
- 
+
+        {!result && !loading && storeMode && (
+          <View style={styles.empty}>
+            <Ionicons name="storefront-outline" size={40} color="#FF2D55" />
+            <Text style={styles.emptyText}>Design your store</Text>
+            <Text style={styles.emptySub}>Describe your store and AI will generate the storefront design</Text>
+          </View>
+        )}
+
         {loading && (
           <View style={styles.loading}>
             <ActivityIndicator size="small" color="#000" />
-            <Text style={styles.loadingText}>Thinking…</Text>
+            <Text style={styles.loadingText}>
+              {storeMode ? 'Designing…' : 'Thinking…'}
+            </Text>
           </View>
         )}
- 
+
         {renderResults()}
       </ScrollView>
     </View>
@@ -210,6 +397,23 @@ const styles = StyleSheet.create({
   loading: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 60 },
   loadingText: { fontSize: 14, color: '#8E8E93', fontWeight: '500' },
 
+  // Design result
+  designResult: { alignItems: 'center', gap: 12, marginTop: 40 },
+  designHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  designTitle: { fontSize: 17, fontWeight: '700', color: '#34C759' },
+  designStoreName: { fontSize: 22, fontWeight: '800', color: '#1C1C1E' },
+  visitButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FF2D55',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 24,
+    marginTop: 8,
+  },
+  visitButtonText: { fontSize: 15, fontWeight: '700', color: '#FFF' },
+
   // Flat UI Styles
   flatRow: {
     paddingVertical: 12,
@@ -226,7 +430,7 @@ const styles = StyleSheet.create({
   flatStatus: { fontSize: 11, color: '#8E8E93', textTransform: 'uppercase', fontWeight: '600' },
   flatDelta: { fontSize: 16, fontWeight: '800' },
 
-  // Search Result Cards (Keeping simplified but consistent)
+  // Search Result Cards
   list: { gap: 12 },
   card: {
     paddingVertical: 12,

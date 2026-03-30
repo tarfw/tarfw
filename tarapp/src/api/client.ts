@@ -1,6 +1,6 @@
 import { getAuthToken } from '../auth/googleSignIn';
 
-export const API_BASE_URL = "https://taragent.wetarteam.workers.dev";
+export const API_BASE_URL = "https://taragent.tar-54d.workers.dev";
 
 // Helper to get auth headers with token
 async function getAuthHeaders(): Promise<Record<string, string>> {
@@ -9,6 +9,7 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
+  console.log('[getAuthHeaders] token present:', !!token);
   return headers;
 }
 export const CHANNEL_URL = `${API_BASE_URL}/api/channel`;
@@ -18,25 +19,55 @@ export const STATEAI_URL = `${API_BASE_URL}/api/stateai`;
 export const SEARCH_URL = `${API_BASE_URL}/api/search`;
 export const INSTANCE_URL = `${API_BASE_URL}/api/instance`;
 export const CLOUD_EVENTS_URL = `${API_BASE_URL}/api/events`;
-export const WS_URL = 'wss://taragent.wetarteam.workers.dev/api/ws';
+export const WS_URL = 'wss://taragent.tar-54d.workers.dev/api/ws';
 
 // ─── Channel API (natural language + search only) ───
+
+// ─── Auth Scopes API (store management) ───
+
+export async function listScopesApi(): Promise<{ scopes: { scope: string; role: string }[] }> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_BASE_URL}/api/auth/scopes`, { headers });
+  if (!response.ok) throw new Error(`Scopes LIST Error: ${response.status}`);
+  return response.json();
+}
+
+export async function createScopeApi(scope: string): Promise<any> {
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${API_BASE_URL}/api/auth/scopes`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ scope }),
+  });
+  if (!response.ok) throw new Error(`Scope CREATE Error: ${response.status}`);
+  return response.json();
+}
 
 export async function sendChannelMessage(req: {
   channel: string;
   userId: string;
   scope: string;
   text?: string;
-  action?: "SEARCH";
+  action?: "SEARCH" | "DESIGN" | "DESIGN_UPDATE";
 }) {
   const headers = await getAuthHeaders();
+  console.log('[sendChannelMessage] URL:', CHANNEL_URL);
+  console.log('[sendChannelMessage] Headers:', JSON.stringify(headers));
+  console.log('[sendChannelMessage] Body:', JSON.stringify(req));
   const response = await fetch(CHANNEL_URL, {
     method: "POST",
     headers,
     body: JSON.stringify(req),
   });
-  if (!response.ok) throw new Error(`Channel API Error: ${response.status}`);
-  return response.json();
+  console.log('[sendChannelMessage] Response status:', response.status);
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('[sendChannelMessage] Error body:', errorText);
+    throw new Error(`Channel API Error: ${response.status} — ${errorText}`);
+  }
+  const json = await response.json();
+  console.log('[sendChannelMessage] Response JSON:', JSON.stringify(json));
+  return json;
 }
 
 // ─── State API (direct CRUD — no workspace live stream, no instance, no broadcast) ───

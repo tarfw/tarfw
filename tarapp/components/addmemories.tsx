@@ -18,6 +18,7 @@ import { STATE_TYPES, StateTypeDef } from '../src/config/stateSchemas';
 import { getAllStates } from '../src/db/turso';
 import { createTask } from '../src/db/eventsDb';
 import { OrderScreen } from './OrderScreen';
+import { useAgentState } from '@/hooks/useAgentState';
 
 interface Props {
   visible: boolean;
@@ -30,6 +31,7 @@ import { router } from 'expo-router';
 
 // Add Tasks, Order, and Inventory as special type options
 export const MEMORY_TYPES: (StateTypeDef | { type: string; label: string; icon: string; color: string })[] = [
+  { type: '_store_mode', label: 'Store', icon: 'storefront-outline', color: '#FF2D55' },
   { type: 'tasks', label: 'Tasks', icon: 'checkbox-outline', color: '#5856D6' },
   { type: 'order', label: 'Order', icon: 'cart-outline', color: '#007AFF' },
   { type: 'inventory', label: 'Inventory Item', icon: 'cube-outline', color: '#34C759' },
@@ -41,6 +43,7 @@ export const MEMORY_TYPES: (StateTypeDef | { type: string; label: string; icon: 
 
 export function AddMemories({ visible, onClose, onSelect, onSelectStateForInstance }: Props) {
   const insets = useSafeAreaInsets();
+  const { setStoreMode } = useAgentState();
   const [showStatePicker, setShowStatePicker] = useState(false);
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [states, setStates] = useState<any[]>([]);
@@ -71,7 +74,12 @@ export function AddMemories({ visible, onClose, onSelect, onSelectStateForInstan
   const handleSelect = (item: StateTypeDef | { type: string }) => {
     console.log('[addmemories] handleSelect called with:', item.type);
     
-    if (item.type === 'inventory') {
+    if (item.type === '_store_mode') {
+      console.log('[addmemories] Enabling store mode');
+      setStoreMode(true);
+      onClose();
+      return;
+    } else if (item.type === 'inventory') {
       // Show state picker for inventory
       console.log('[addmemories] Opening state picker for inventory');
       setShowStatePicker(true);

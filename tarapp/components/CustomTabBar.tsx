@@ -20,6 +20,7 @@ import { useKeyboard } from '@/hooks/useKeyboard';
 import { useAgentState } from '@/hooks/useAgentState';
 import { generateEmbedding } from '@/src/lib/embeddings';
 import { searchStates, getAllStates } from '@/src/db/turso';
+import { createScopeApi } from '@/src/api/client';
 
 interface Suggestion {
   text: string;
@@ -43,7 +44,7 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
   const insets = useSafeAreaInsets();
   const isAgentsTab = state.routes[state.index]?.name === 'agents';
   const { visible: keyboardVisible } = useKeyboard();
-  const { loading, setLoading, setResult, setPickerVisible, setSearchVisible } = useAgentState();
+  const { loading, setLoading, setResult, setPickerVisible, setSearchVisible, storeMode, activeScope, setActiveScope } = useAgentState();
 
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
@@ -214,48 +215,73 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
       setLoading(true);
       setResult(null);
       try {
-        const r = await fetch('https://taragent.wetarteam.workers.dev/api/channel', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            channel: 'app_agent',
-            userId: 'mobile_user_01',
-            scope: 'shop:main',
-            text: suggestion.text,
-          }),
-        });
-        const response = await r.json();
+        const { sendChannelMessage } = await import('@/src/api/client');
+        let scope = (storeMode && activeScope) ? activeScope : 'shop:main';
+        let action: 'DESIGN' | 'DESIGN_UPDATE' | undefined;
+
+        if (storeMode && activeScope) {
+          action = 'DESIGN_UPDATE';
+        } else if (storeMode && !activeScope) {
+          action = 'DESIGN';
+        }
+
+        const body: any = {
+          channel: 'app_agent',
+          userId: 'mobile_user_01',
+          scope,
+          text: suggestion.text,
+        };
+        if (action) body.action = action;
+        
+        console.log('[SUGGESTION] Sending to /api/channel:', JSON.stringify(body));
+        const response = await sendChannelMessage(body);
+        console.log('[SUGGESTION] Response:', JSON.stringify(response));
         setResult(response);
         setQuery('');
       } catch (err: any) {
+        console.error('[SUGGESTION] Error:', err.message, err);
         setResult({ error: err.message });
       } finally {
         setLoading(false);
       }
     }
-  }, [loading, setLoading, setResult]);
+  }, [loading, setLoading, setResult, storeMode, activeScope, setActiveScope]);
 
   const handleAgentInput = async () => {
     if (!query || loading) return;
+    console.log('[AGENT INPUT] Starting submit, query:', query);
+    console.log('[AGENT INPUT] storeMode:', storeMode, 'activeScope:', activeScope);
     setShowSuggestions(false);
     setSuggestions([]);
     setLoading(true);
     setResult(null);
     try {
-      const r = await fetch('https://taragent.wetarteam.workers.dev/api/channel', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          channel: 'app_agent',
-          userId: 'mobile_user_01',
-          scope: 'shop:main',
-          text: query,
-        }),
-      });
-      const response = await r.json();
+      const { sendChannelMessage } = await import('@/src/api/client');
+
+      let scope = (storeMode && activeScope) ? activeScope : 'shop:main';
+      let action: 'DESIGN' | 'DESIGN_UPDATE' | undefined;
+
+      if (storeMode && activeScope) {
+        action = 'DESIGN_UPDATE';
+      } else if (storeMode && !activeScope) {
+        action = 'DESIGN';
+      }
+
+      const body: any = {
+        channel: 'app_agent',
+        userId: 'mobile_user_01',
+        scope,
+        text: query,
+      };
+      if (action) body.action = action;
+
+      console.log('[AGENT INPUT] Sending to /api/channel:', JSON.stringify(body));
+      const response = await sendChannelMessage(body);
+      console.log('[AGENT INPUT] Response:', JSON.stringify(response));
       setResult(response);
       setQuery('');
     } catch (err: any) {
+      console.error('[AGENT INPUT] Error:', err.message, err);
       setResult({ error: err.message });
     } finally {
       setLoading(false);
@@ -311,7 +337,13 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
               style={styles.input}
               value={query}
               onChangeText={setQuery}
-              placeholder="Type something..."
+              placeholder={
+                storeMode && !activeScope
+                  ? "Describe your store… e.g. 'create a bakery called sweetbakes'"
+                  : storeMode && activeScope
+                    ? "Describe changes… e.g. 'make it darker, change tagline'"
+                    : "Type something..."
+              }
               placeholderTextColor="#BCBCBC"
               multiline
               maxLength={500}

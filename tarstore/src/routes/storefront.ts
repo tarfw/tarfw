@@ -51,9 +51,9 @@ async function renderWithDesignTree(
   data: StoreData,
   fallbackHtml: string
 ): Promise<{ html: string; css: string } | null> {
-  // Filter sections that have design trees
+  // Filter sections that have design trees and are not just components
   const designSections = sections
-    .filter(s => s.payload?.design)
+    .filter(s => s.payload?.design && s.payload?.role !== 'component')
     .sort((a, b) => (a.payload?.order || 0) - (b.payload?.order || 0));
 
   if (designSections.length === 0) return null;

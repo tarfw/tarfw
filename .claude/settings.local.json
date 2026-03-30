@@ -14,7 +14,11 @@
       "Bash(git push:*)",
       "Bash(git check-ignore:*)",
       "Bash(git pull:*)",
-      "Bash(git:*)"
+      "Bash(git:*)",
+      "Bash(grep:*)"
     ]
+  },
+  "enabledPlugins": {
+    "typescript-lsp@claude-plugins-official": true
   }
 }

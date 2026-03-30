@@ -1017,29 +1017,41 @@ export class DesignAgent {
     userId: string;
   }): Promise<{ success: boolean; templateId: string; store: any; message: string }> {
     const { text, scope } = req;
+    console.log('[DESIGN AGENT] generateDesign called, text:', text, 'scope:', scope);
 
     // 1. Pick best template (quick keyword match or AI)
     const templateId = this.pickTemplate(text);
+    console.log('[DESIGN AGENT] Step 1 — picked template:', templateId);
 
     // 2. Generate customization via AI
+    console.log('[DESIGN AGENT] Step 2 — generating customization via AI...');
     const customization = await this.generateCustomization(text, templateId, scope);
+    console.log('[DESIGN AGENT] Step 2 done — customization:', JSON.stringify(customization).substring(0, 500));
 
     // 3. Write store config state
+    console.log('[DESIGN AGENT] Step 3 — writing store config...');
     await this.writeStoreConfig(scope, customization);
+    console.log('[DESIGN AGENT] Step 3 done');
 
     // 4. Write template sections to DB
     const tplSections = TEMPLATE_SECTIONS[customization.templateId || templateId];
+    console.log('[DESIGN AGENT] Step 4 — writing sections, template found:', !!tplSections);
     if (tplSections) {
       await this.writeSections(scope, tplSections);
+      console.log('[DESIGN AGENT] Step 4 done — sections written');
     }
 
     // 5. Write CMS pages
+    console.log('[DESIGN AGENT] Step 5 — writing CMS pages, has pages:', !!customization.pages);
     if (customization.pages) {
       await this.writePages(scope, customization.pages);
+      console.log('[DESIGN AGENT] Step 5 done');
     }
 
     // 6. Emit design event
+    console.log('[DESIGN AGENT] Step 6 — emitting design event...');
     await this.emitDesignEvent(scope, templateId);
+    console.log('[DESIGN AGENT] Step 6 done — all complete!');
 
     return {
       success: true,
@@ -1140,7 +1152,7 @@ export class DesignAgent {
         });
       } else {
         await this.statesDb.execute({
-          sql: `INSERT INTO state (id, ucode, type, title, payload, scope) VALUES (?, ?, 'section', ?, ?, ?)`,
+          sql: `INSERT OR REPLACE INTO state (id, ucode, type, title, payload, scope) VALUES (?, ?, 'section', ?, ?, ?)`,
           args: [crypto.randomUUID(), sec.ucode, sec.title, sec.payload, scope],
         });
       }
@@ -1202,23 +1214,34 @@ USER DESCRIPTION:
 ${text}`;
 
     // Try Workers AI
+    console.log('[DESIGN AGENT] generateCustomization — env.AI available:', !!this.env.AI);
     if (this.env.AI) {
       try {
+        console.log('[DESIGN AGENT] Calling Workers AI @cf/meta/llama-3-8b-instruct...');
         const response = await this.env.AI.run('@cf/meta/llama-3-8b-instruct', {
           messages: [
             { role: 'system', content: 'You are a JSON-only API. Output ONLY valid JSON.' },
             { role: 'user', content: prompt },
           ],
         });
+        console.log('[DESIGN AGENT] AI raw response:', JSON.stringify(response).substring(0, 500));
         const raw = (response.response || '').replace(/```json\n?|\n?```/g, '').trim();
         const jsonMatch = raw.match(/\{[\s\S]*\}/);
-        if (jsonMatch) return JSON.parse(jsonMatch[0]);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          console.log('[DESIGN AGENT] AI parsed successfully');
+          return parsed;
+        }
+        console.warn('[DESIGN AGENT] AI response had no JSON match, falling back');
       } catch (e: any) {
         console.warn('[DesignAgent] AI failed, using defaults:', e.message);
       }
+    } else {
+      console.log('[DESIGN AGENT] No AI binding, using fallback');
     }
 
     // Fallback: generate from keywords
+    console.log('[DESIGN AGENT] Using fallbackCustomization');
     return this.fallbackCustomization(text, templateId, scope);
   }
 
@@ -1283,6 +1306,7 @@ Example: if user says "change tagline", output: {"tagline":"new tagline"}`;
   private async writeStoreConfig(scope: string, customization: any) {
     const slug = scope.replace('shop:', '');
     const ucode = `store:${slug}`;
+    console.log('[DESIGN AGENT] writeStoreConfig — ucode:', ucode, 'scope:', scope);
     const store = customization.store || {};
     const themeOverrides = customization.themeOverrides || {};
 
@@ -1316,7 +1340,7 @@ Example: if user says "change tagline", output: {"tagline":"new tagline"}`;
       });
     } else {
       await this.statesDb.execute({
-        sql: `INSERT INTO state (id, ucode, type, title, payload, scope) VALUES (?, ?, 'store', ?, ?, ?)`,
+        sql: `INSERT OR REPLACE INTO state (id, ucode, type, title, payload, scope) VALUES (?, ?, 'store', ?, ?, ?)`,
         args: [crypto.randomUUID(), ucode, store.storeName || slug, JSON.stringify(payload), scope],
       });
     }
@@ -1346,7 +1370,7 @@ Example: if user says "change tagline", output: {"tagline":"new tagline"}`;
         });
       } else {
         await this.statesDb.execute({
-          sql: `INSERT INTO state (id, ucode, type, title, payload, scope) VALUES (?, ?, 'section', ?, ?, ?)`,
+          sql: `INSERT OR REPLACE INTO state (id, ucode, type, title, payload, scope) VALUES (?, ?, 'section', ?, ?, ?)`,
           args: [crypto.randomUUID(), ucode, sectionKey, payload, scope],
         });
       }
@@ -1369,7 +1393,7 @@ Example: if user says "change tagline", output: {"tagline":"new tagline"}`;
         });
       } else {
         await this.statesDb.execute({
-          sql: `INSERT INTO state (id, ucode, type, title, payload, scope) VALUES (?, ?, 'section', ?, ?, ?)`,
+          sql: `INSERT OR REPLACE INTO state (id, ucode, type, title, payload, scope) VALUES (?, ?, 'section', ?, ?, ?)`,
           args: [crypto.randomUUID(), ucode, 'productcard', payload, scope],
         });
       }
@@ -1394,7 +1418,7 @@ Example: if user says "change tagline", output: {"tagline":"new tagline"}`;
         });
       } else {
         await this.statesDb.execute({
-          sql: `INSERT INTO state (id, ucode, type, title, payload, scope) VALUES (?, ?, 'page', ?, ?, ?)`,
+          sql: `INSERT OR REPLACE INTO state (id, ucode, type, title, payload, scope) VALUES (?, ?, 'page', ?, ?, ?)`,
           args: [crypto.randomUUID(), ucode, page.title, payload, scope],
         });
       }
@@ -1403,6 +1427,7 @@ Example: if user says "change tagline", output: {"tagline":"new tagline"}`;
 
   /** Emit DESIGNGENERATE event via OrderDO */
   private async emitDesignEvent(scope: string, templateId: string) {
+    console.log('[DESIGN AGENT] emitDesignEvent — ORDER_DO available:', !!this.env.ORDER_DO);
     if (!this.env.ORDER_DO) return;
     try {
       const id = this.env.ORDER_DO.idFromName(scope);

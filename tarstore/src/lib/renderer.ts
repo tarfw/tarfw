@@ -131,10 +131,18 @@ function renderNode(node: DesignNode, data: StoreData, ctx: RenderContext): void
 
   // Resolve text content
   let content = '';
+  let isBoundButEmpty = false;
   if (node.bind) {
-    content = esc(resolveBind(node.bind, data, node.format));
+    const rawValue = getNestedValue(data, node.bind);
+    isBoundButEmpty = rawValue === null || rawValue === undefined || rawValue === '';
+    content = esc(formatValue(rawValue, node.format, data));
   } else if (node.text) {
     content = esc(node.text);
+  }
+
+  // Skip rendering if bound to empty data and has no children (guards against empty labels/spaces)
+  if (node.bind && isBoundButEmpty && (!node.children || node.children.length === 0) && tag !== 'img') {
+    return;
   }
 
   // Emit CSS
@@ -150,15 +158,19 @@ function renderNode(node: DesignNode, data: StoreData, ctx: RenderContext): void
   }
 
   // Emit HTML
-  const selfClosing = tag === 'img' || tag === 'br' || tag === 'hr' || tag === 'input';
+  if (tag === 'img' && node.bind) {
+    const src = resolveBind(node.bind, data);
+    if (!src) return; // Skip rendering broken images
+    const attrs: string[] = [`class="${id}"`, `src="${esc(src)}"`, `alt="${content || ''}"`, 'loading="lazy"'];
+    if (node.href) attrs.push(`href="${esc(node.href)}"`); // Unusual for img but allowed in our tree
+    ctx.html += `<img ${attrs.join(' ')} />`;
+    return;
+  }
+
+  const selfClosing = tag === 'br' || tag === 'hr' || tag === 'input';
   const attrs: string[] = [`class="${id}"`];
 
   if (node.href) attrs.push(`href="${esc(node.href)}"`);
-  if (tag === 'img' && node.bind) {
-    attrs.push(`src="${esc(resolveBind(node.bind, data))}"`);
-    attrs.push(`alt="${content || ''}"`);
-    attrs.push('loading="lazy"');
-  }
 
   if (selfClosing) {
     ctx.html += `<${tag} ${attrs.join(' ')} />`;
@@ -211,7 +223,7 @@ export function renderDesignTree(
 
   return {
     html: ctx.html,
-    css: ctx.css + mediaCss + animCss,
+    css: ctx.css + mediaCss + animCss + ' body > *:first-child { margin-top: 0 !important; }',
   };
 }
 
@@ -238,6 +250,7 @@ export function buildPage(opts: {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html,body{margin:0;padding:0;top:0;position:relative}</style>
 <title>${esc(opts.title)}</title>
 <meta name="description" content="${esc(opts.description)}">
 ${opts.ogImage ? `<meta property="og:image" content="${esc(opts.ogImage)}">` : ''}

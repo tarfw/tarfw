@@ -95,7 +95,7 @@ export function SearchMemories({ visible, onClose }: Props) {
             </View>
           )}
 
-          {result?.result && (
+          {result?.result && Array.isArray(result.result) && (
             <View>
               <Text style={styles.sectionTitle}>
                 {query ? 'Results' : 'Available Memories'}
