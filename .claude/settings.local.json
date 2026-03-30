@@ -4,7 +4,17 @@
       "Bash(npx wrangler:*)",
       "Bash(ls:*)",
       "Bash(xargs grep:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(git status:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx tsx:*)",
+      "Bash(git push:*)",
+      "Bash(git check-ignore:*)",
+      "Bash(git pull:*)",
+      "Bash(git:*)"
     ]
   }
 }
