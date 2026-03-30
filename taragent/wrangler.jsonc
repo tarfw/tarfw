@@ -1,5 +1,6 @@
 {
   "name": "taragent",
+  "account_id": "54dc15bf1f8fecfd12dac7b74149eb9a",
   "main": "src/index.ts",
   "compatibility_date": "2024-03-20",
   // ai removed - embeddings generated locally on mobile instead

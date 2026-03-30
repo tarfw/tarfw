@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { InterpreterAgent } from './agents/interpreter';
 import { SearchAgent } from './agents/search';
+import { DesignAgent } from './agents/design';
 import { getStatesDbClient, getInstancesDbClient } from './db/client';
 
 type Bindings = {
@@ -441,7 +442,7 @@ const ChannelRequestSchema = z.object({
   userId: z.string(),
   scope: z.string(),
   text: z.string().optional(),       // Natural language input
-  action: z.enum(["SEARCH"]).optional(), // Only SEARCH is supported via channel now
+  action: z.enum(["SEARCH", "DESIGN", "DESIGN_UPDATE"]).optional(),
   data: z.record(z.any()).optional(),
   lat: z.number().optional(),
   lng: z.number().optional()
@@ -468,16 +469,120 @@ app.post('/api/channel', async (c) => {
       return c.json({ success: true, result: { ...result, action: 'SEARCH' } });
     }
 
+    // Route to Design Agent for storefront generation/updates
+    if (requestData.action === "DESIGN" || requestData.action === "DESIGN_UPDATE" ||
+        (requestData.text && /^(design|create|build|setup)\s+(my\s+)?(store|shop|site|storefront)/i.test(requestData.text))) {
+      const statesDb = getStatesDbClient(c.env.STATES_DB_URL, c.env.STATES_DB_TOKEN);
+      const designAgent = new DesignAgent(statesDb, c.env);
+
+      if (requestData.action === "DESIGN_UPDATE") {
+        const result = await designAgent.updateDesign({
+          text: requestData.text || '',
+          scope: requestData.scope || 'shop:main',
+          userId: requestData.userId,
+        });
+        return c.json({ success: true, result: { ...result, action: 'DESIGN_UPDATE' } });
+      }
+
+      const result = await designAgent.generateDesign({
+        text: requestData.text || '',
+        scope: requestData.scope || 'shop:main',
+        userId: requestData.userId,
+      });
+      return c.json({ success: true, result: { ...result, action: 'DESIGN' } });
+    }
+
     // Natural language → interpreter pipeline (uses instances DB for trace + instance)
     const instancesDb = getInstancesDbClient(c.env.INSTANCES_DB_URL, c.env.INSTANCES_DB_TOKEN);
     const interpreter = new InterpreterAgent(instancesDb, c.env);
-    const result = await interpreter.processIntent(requestData);
+    const result = await interpreter.processIntent({
+      ...requestData,
+      action: undefined, // DESIGN/DESIGN_UPDATE already routed above; interpreter handles NL intent
+    });
 
     return c.json({ success: true, result });
   } catch (err: any) {
     console.error("Channel Error:", err);
     return c.json({ error: "Internal Server Error", message: err.message }, 500);
   }
+});
+
+// ─── /api/design/history/:scope — Get design snapshots (opcode 813) ───
+app.get('/api/design/history/:scope', async (c) => {
+  const scope = c.req.param('scope');
+  const limit = parseInt(c.req.query('limit') || '10');
+
+  if (!c.env.ORDER_DO) {
+    return c.json({ error: 'ORDER_DO not bound' }, 500);
+  }
+
+  const id = c.env.ORDER_DO.idFromName(scope);
+  const stub = c.env.ORDER_DO.get(id);
+
+  const response = await stub.fetch(new Request(`http://localhost/api/events?limit=100&scope=${scope}`, {
+    method: 'GET',
+  }));
+
+  if (!response.ok) {
+    return c.json({ error: 'Failed to fetch events' }, 500);
+  }
+
+  const allEvents: any[] = await response.json();
+  // Filter to design snapshot events (opcode 813) with snapshot payloads
+  const snapshots = allEvents
+    .filter((e: any) => e.opcode === 813 && e.payload?.storeConfig)
+    .slice(0, limit)
+    .map((e: any) => ({
+      id: e.id,
+      ts: e.ts,
+      scope: e.scope,
+    }));
+
+  return c.json({ success: true, result: snapshots });
+});
+
+// ─── /api/design/revert/:scope — Revert to a specific snapshot ───
+app.post('/api/design/revert/:scope', async (c) => {
+  const scope = c.req.param('scope');
+  const body = await c.req.json();
+  const eventId = body.eventId;
+
+  if (!eventId) {
+    return c.json({ error: 'eventId is required' }, 400);
+  }
+
+  if (!c.env.ORDER_DO) {
+    return c.json({ error: 'ORDER_DO not bound' }, 500);
+  }
+
+  // Fetch the snapshot event from DO
+  const doId = c.env.ORDER_DO.idFromName(scope);
+  const stub = c.env.ORDER_DO.get(doId);
+
+  const response = await stub.fetch(new Request(`http://localhost/api/events?limit=100&scope=${scope}`, {
+    method: 'GET',
+  }));
+
+  if (!response.ok) {
+    return c.json({ error: 'Failed to fetch events' }, 500);
+  }
+
+  const allEvents: any[] = await response.json();
+  const snapshot = allEvents.find((e: any) => e.id === eventId && e.opcode === 813 && e.payload?.storeConfig);
+
+  if (!snapshot) {
+    return c.json({ error: 'Snapshot not found' }, 404);
+  }
+
+  // Use DesignAgent to revert
+  const statesDb = getStatesDbClient(c.env.STATES_DB_URL, c.env.STATES_DB_TOKEN);
+  const designAgent = new DesignAgent(statesDb, c.env);
+  const result = await designAgent.revertDesign({
+    snapshotPayload: snapshot.payload,
+    scope,
+  });
+
+  return c.json({ success: true, result });
 });
 
 // ─── /api/ws/:scope — WebSocket proxy to OrderDO ───

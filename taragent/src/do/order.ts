@@ -218,7 +218,7 @@ export class OrderDO extends DurableObject {
     if (request.method === "PUT") {
       const url = new URL(request.url);
       const eventId = url.searchParams.get('id');
-      const body = await request.json();
+      const body = await request.json() as any;
 
       if (!eventId) {
         return new Response(JSON.stringify({ error: 'Event ID required' }), {
