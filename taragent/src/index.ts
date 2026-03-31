@@ -269,7 +269,7 @@ export default {
       const event = { opcode: body.opcode, streamid: body.streamid, delta: body.delta || 0, payload: body.payload || {}, scope, timestamp: new Date().toISOString() };
       const response = await stub.fetch(new Request(`http://localhost/api/events?scope=${scope}`, { method: "POST", body: JSON.stringify(event) }));
       const result = await response.json();
-      return jsonResponse({ success: true, result: { emitted: true, event, scope, ...result } }, 201);
+      return jsonResponse({ success: true, result: { emitted: true, event, scope, ...(result as object) } }, 201);
     }
     if (path.startsWith("/api/events/") && request.method === "GET") {
       const scope = path.split("/api/events/")[1];
@@ -330,7 +330,6 @@ export default {
       const snapshot = allEvents.find((e: any) => e.id === body.eventId && e.opcode === 813 && e.payload?.storeConfig);
       if (!snapshot) return jsonResponse({ error: "Snapshot not found" }, 404);
       const statesDb = getStatesDbClient(env.STATES_DB_URL, env.STATES_DB_TOKEN);
-      const { DesignAgent } = await import("./agents/design");
       const designAgent = new DesignAgent(statesDb, env);
       const result = await designAgent.revertDesign({ snapshotPayload: snapshot.payload, scope });
       return jsonResponse({ success: true, result });

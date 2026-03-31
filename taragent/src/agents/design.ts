@@ -1,4 +1,4 @@
-import { Client } from '@libsql/client';
+import type { Client } from '@libsql/client';
 
 // ─── Template metadata (matches tarstore template IDs) ───
 interface TemplateTheme {

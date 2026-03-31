@@ -1,4 +1,4 @@
-import { createClient, Client } from '@libsql/client';
+import { createClient, type Client } from '@libsql/client';
 
 /**
  * Get the States DB client (state + stateai tables)
@@ -24,9 +24,4 @@ export function getInstancesDbClient(url: string, authToken: string): Client {
     url: url,
     authToken: authToken,
   });
-}
-
-// Legacy alias for backward compatibility
-export function getDbClient(url: string, authToken: string): Client {
-  return getStatesDbClient(url, authToken);
 }

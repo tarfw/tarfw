@@ -1,4 +1,4 @@
-import { Client } from '@libsql/client';
+import type { Client } from '@libsql/client';
 
 export class SearchAgent {
   private db: Client;

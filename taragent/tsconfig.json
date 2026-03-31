@@ -1,5 +1,7 @@
 {
   "extends": "agents/tsconfig",
-  "compilerOptions": {},
+  "compilerOptions": {
+    "types": ["node", "@cloudflare/workers-types"]
+  },
   "exclude": ["tarapp", "node_modules"]
 }

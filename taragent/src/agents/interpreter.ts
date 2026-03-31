@@ -1,4 +1,4 @@
-import { Client } from "@libsql/client";
+import type { Client } from "@libsql/client";
 import { z } from "zod";
 import { createGroq } from "@ai-sdk/groq";
 import { generateText } from "ai";

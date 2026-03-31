@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(www.datacamp.com)",
+      "WebFetch(qwen.ai)",
+      "WebFetch(caylent.com)"
+    ]
+  },
+  "$version": 3
+}

@@ -15,7 +15,20 @@
       "Bash(git check-ignore:*)",
       "Bash(git pull:*)",
       "Bash(git:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "WebFetch(domain:agents.cloudflare.com)",
+      "WebFetch(domain:developers.cloudflare.com)",
+      "WebFetch(domain:console.groq.com)",
+      "WebSearch",
+      "WebFetch(domain:crazyrouter.com)",
+      "Bash(npx create-cloudflare@latest:*)",
+      "Bash(rm:*)",
+      "Bash(npm ls:*)",
+      "Bash(npm view:*)",
+      "Bash(kill %1:*)",
+      "Bash(npm list:*)",
+      "WebFetch(domain:www.npmjs.com)",
+      "Bash(node:*)"
     ]
   },
   "enabledPlugins": {
