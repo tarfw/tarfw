@@ -8,12 +8,13 @@
     "types": "wrangler types env.d.ts --include-runtime false"
   },
   "dependencies": {
-    "@ai-sdk/groq": "^1.0.0",
+    "@ai-sdk/groq": "^3.0.0",
     "@cloudflare/ai-chat": "^0.2.6",
     "@libsql/client": "^0.14.0",
     "agents": "^0.8.7",
     "ai": "^6.0.141",
     "libsql": "^0.5.22",
+    "nanoid": "^5.1.7",
     "zod": "^4.3.6"
   },
   "devDependencies": {

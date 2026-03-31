@@ -1,5 +1,8 @@
 import { routeAgentRequest } from "agents";
 import { getStatesDbClient, getInstancesDbClient } from "./db/client";
+import { InterpreterAgent } from "./agents/interpreter";
+import { SearchAgent } from "./agents/search";
+import { DesignAgent } from "./agents/design";
 
 // Re-export Durable Objects for Wrangler binding
 export { TarAgent } from "./agent";
@@ -210,14 +213,49 @@ export default {
       return jsonResponse({ result: result.rows });
     }
 
-    // ─── REST compat: Channel ───
+    // ─── REST compat: Channel (runs directly, not via DO RPC, for Groq compatibility) ───
     if (path === "/api/channel" && request.method === "POST") {
-      const body = await request.json() as any;
-      const stub = getTarAgentStub(env, body.scope || "default");
       try {
-        const result = await stub.callChannel(body);
-        return jsonResponse(result);
+        const body = await request.json() as any;
+
+        // Route to Search
+        if ((body.action === "SEARCH" || body.text?.toLowerCase().startsWith("search")) && body.text) {
+          const statesDb = getStatesDbClient(env.STATES_DB_URL, env.STATES_DB_TOKEN);
+          const searchAgent = new SearchAgent(statesDb, env);
+          const result = await searchAgent.processSearch(body.text, body.scope || "shop:main");
+          return jsonResponse({ success: true, result: { ...result, action: "SEARCH" } });
+        }
+
+        // Route to Design
+        const isDesign = body.action === "DESIGN" || body.action === "DESIGN_UPDATE" ||
+          (body.text && /^(design|create|build|setup)\s+(my\s+)?(store|shop|site|storefront)/i.test(body.text));
+
+        if (isDesign) {
+          const statesDb = getStatesDbClient(env.STATES_DB_URL, env.STATES_DB_TOKEN);
+          const designAgent = new DesignAgent(statesDb, env);
+          let scope = body.scope || "shop:main";
+          let action = body.action || "DESIGN";
+
+          if (action !== "DESIGN_UPDATE" && scope === "shop:main" && body.text) {
+            const slugMatch = body.text.match(/(?:called|named|name\s*:|name)\s+([a-zA-Z0-9-]+)/i);
+            if (slugMatch) scope = `shop:${slugMatch[1].toLowerCase()}`;
+          }
+
+          if (action === "DESIGN_UPDATE") {
+            const result = await designAgent.updateDesign({ text: body.text || "", scope, userId: body.userId });
+            return jsonResponse({ success: true, result: { ...result, scope, action: "DESIGN_UPDATE" } });
+          }
+          const result = await designAgent.generateDesign({ text: body.text || "", scope, userId: body.userId });
+          return jsonResponse({ success: true, result: { ...result, scope, action: "DESIGN" } });
+        }
+
+        // NL → Interpreter (direct, with Groq access via env)
+        const instancesDb = getInstancesDbClient(env.INSTANCES_DB_URL, env.INSTANCES_DB_TOKEN);
+        const interpreter = new InterpreterAgent(instancesDb, env);
+        const result = await interpreter.processIntent({ ...body, action: undefined });
+        return jsonResponse({ success: true, result });
       } catch (err: any) {
+        console.error("Channel Error:", err);
         return jsonResponse({ error: "Internal Server Error", message: err.message }, 500);
       }
     }
