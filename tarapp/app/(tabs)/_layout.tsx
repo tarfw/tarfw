@@ -6,6 +6,7 @@ import { AgentProvider, useAgentState } from '@/hooks/useAgentState';
 import { AddMemories } from '@/components/addmemories';
 import { SearchMemories } from '@/components/searchmemories';
 import { CrudMemories } from '@/components/crudmemories';
+import { MemoryStateModal } from '@/components/MemoryStateModal';
 import { InstanceFormModal } from '@/components/InstanceFormModal';
 import { StateTypeDef } from '@/src/config/stateSchemas';
 
@@ -35,7 +36,7 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { err
 }
 
 function GlobalModals() {
-  const { isPickerVisible, setPickerVisible, createState, isSearchVisible, setSearchVisible, addInstance } = useAgentState();
+  const { isPickerVisible, setPickerVisible, createState, isSearchVisible, setSearchVisible, addInstance, isMemoryStateVisible, setMemoryStateVisible, setSelectedMemoryState } = useAgentState();
   const [showForm, setShowForm] = useState(false);
   const [selectedType, setSelectedType] = useState<StateTypeDef | null>(null);
   
@@ -96,6 +97,14 @@ function GlobalModals() {
       <SearchMemories
         visible={isSearchVisible}
         onClose={() => setSearchVisible(false)}
+      />
+      <MemoryStateModal
+        visible={isMemoryStateVisible}
+        onClose={() => setMemoryStateVisible(false)}
+        onSelect={(type) => {
+          console.log('[GlobalModals] Selected type from MemoryStateModal:', type);
+          setSelectedMemoryState(type);
+        }}
       />
     </>
   );

@@ -14,7 +14,7 @@ import {
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
-import { Ionicons, Feather } from '@expo/vector-icons';
+import { Ionicons, Feather, FontAwesome5 } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useKeyboard } from '@/hooks/useKeyboard';
 import { useAgentState } from '@/hooks/useAgentState';
@@ -43,10 +43,9 @@ function useDebounce<T>(value: T, delay: number): T {
 export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
   const isAgentsTab = state.routes[state.index]?.name === 'agents';
-  const { visible: keyboardVisible } = useKeyboard();
-  const { loading, setLoading, setResult, setPickerVisible, setSearchVisible, storeMode, activeScope, setActiveScope } = useAgentState();
-
-  const [query, setQuery] = useState('');
+  const { visible: keyboardVisible, height: keyboardHeight } = useKeyboard();
+  const { loading, setLoading, setResult, setPickerVisible, setSearchVisible, setMemoryStateVisible, selectedMemoryState, activeScope, setActiveScope, query, setQuery } = useAgentState();
+  const isSitesMode = selectedMemoryState === 'sites';
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -73,7 +72,12 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
         // Step 3: Generate suggestions from search results
         const aiSuggestions: Suggestion[] = [];
         
-        for (const result of searchResults) {
+        // Ensure we have an array to iterate over
+        const resultsArray = Array.isArray(searchResults) 
+          ? searchResults 
+          : (searchResults && (searchResults.results || searchResults.result)) || [];
+        
+        for (const result of resultsArray) {
           const ucode = result.ucode || result.streamid;
           const title = result.title || '';
           const typeKey = ucode?.split(':')[0];
@@ -216,19 +220,18 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
       setResult(null);
       try {
         const { sendChannelMessage } = await import('@/src/api/client');
-        let scope = (storeMode && activeScope) ? activeScope : 'shop:main';
         let action: 'DESIGN' | 'DESIGN_UPDATE' | undefined;
 
-        if (storeMode && activeScope) {
+        if (isSitesMode && activeScope) {
           action = 'DESIGN_UPDATE';
-        } else if (storeMode && !activeScope) {
+        } else if (isSitesMode && !activeScope) {
           action = 'DESIGN';
         }
 
         const body: any = {
           channel: 'app_agent',
           userId: 'mobile_user_01',
-          scope,
+          scope: (isSitesMode && activeScope) ? activeScope : 'shop:main',
           text: suggestion.text,
         };
         if (action) body.action = action;
@@ -245,12 +248,12 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
         setLoading(false);
       }
     }
-  }, [loading, setLoading, setResult, storeMode, activeScope, setActiveScope]);
+  }, [loading, setLoading, setResult, isSitesMode, activeScope, setActiveScope]);
 
   const handleAgentInput = async () => {
     if (!query || loading) return;
     console.log('[AGENT INPUT] Starting submit, query:', query);
-    console.log('[AGENT INPUT] storeMode:', storeMode, 'activeScope:', activeScope);
+    console.log('[AGENT INPUT] isSitesMode:', isSitesMode, 'activeScope:', activeScope);
     setShowSuggestions(false);
     setSuggestions([]);
     setLoading(true);
@@ -258,19 +261,18 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
     try {
       const { sendChannelMessage } = await import('@/src/api/client');
 
-      let scope = (storeMode && activeScope) ? activeScope : 'shop:main';
       let action: 'DESIGN' | 'DESIGN_UPDATE' | undefined;
 
-      if (storeMode && activeScope) {
+      if (isSitesMode && activeScope) {
         action = 'DESIGN_UPDATE';
-      } else if (storeMode && !activeScope) {
+      } else if (isSitesMode && !activeScope) {
         action = 'DESIGN';
       }
 
       const body: any = {
         channel: 'app_agent',
         userId: 'mobile_user_01',
-        scope,
+        scope: (isSitesMode && activeScope) ? activeScope : 'shop:main',
         text: query,
       };
       if (action) body.action = action;
@@ -323,12 +325,17 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      style={{ flex: keyboardVisible ? 0 : 0 }}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : undefined}
     >
       <View style={[
         styles.wrapper,
-        { paddingBottom: keyboardVisible ? 0 : Math.max(insets.bottom, 8) },
+        { 
+          paddingBottom: keyboardVisible 
+            ? (Platform.OS === 'android' ? keyboardHeight + 20 : 0) 
+            : Math.max(insets.bottom, 8) 
+        },
       ]}>
         {isAgentsTab && (
           <View style={styles.inputContainer}>
@@ -338,10 +345,10 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
               value={query}
               onChangeText={setQuery}
               placeholder={
-                storeMode && !activeScope
-                  ? "Describe your store… e.g. 'create a bakery called sweetbakes'"
-                  : storeMode && activeScope
-                    ? "Describe changes… e.g. 'make it darker, change tagline'"
+                isSitesMode && !activeScope
+                  ? "Describe your site… e.g. 'Create site'"
+                  : isSitesMode && activeScope
+                    ? "Describe changes… e.g. 'Edit site'"
                     : "Type something..."
               }
               placeholderTextColor="#BCBCBC"
@@ -496,6 +503,18 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
                     style={styles.toggleTab}
                   >
                     <Ionicons name="arrow-up" size={20} color="#8E8E93" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => {
+                      if (process.env.EXPO_OS === 'ios') {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      }
+                      setMemoryStateVisible(true);
+                    }}
+                    activeOpacity={0.7}
+                    style={styles.toggleTab}
+                  >
+                    <FontAwesome5 name="asterisk" size={16} color="#8E8E93" />
                   </TouchableOpacity>
                 </View>
               </View>

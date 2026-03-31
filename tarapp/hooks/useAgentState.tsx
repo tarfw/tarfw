@@ -23,11 +23,14 @@ type AgentState = {
   setPickerVisible: (v: boolean) => void;
   isSearchVisible: boolean;
   setSearchVisible: (v: boolean) => void;
-  // Store mode
-  storeMode: boolean;
-  setStoreMode: (v: boolean) => void;
+  isMemoryStateVisible: boolean;
+  setMemoryStateVisible: (v: boolean) => void;
+  selectedMemoryState: string | null;
+  setSelectedMemoryState: (v: string | null) => void;
   activeScope: string | null;
   setActiveScope: (v: string | null) => void;
+  query: string;
+  setQuery: (v: string) => void;
 };
 
 const AgentContext = createContext<AgentState>({
@@ -49,10 +52,14 @@ const AgentContext = createContext<AgentState>({
   setPickerVisible: () => {},
   isSearchVisible: false,
   setSearchVisible: () => {},
-  storeMode: false,
-  setStoreMode: () => {},
+  isMemoryStateVisible: false,
+  setMemoryStateVisible: () => {},
+  selectedMemoryState: null,
+  setSelectedMemoryState: () => {},
   activeScope: null,
   setActiveScope: () => {},
+  query: '',
+  setQuery: () => {},
 });
 
 const DEFAULT_SCOPE = "shop:main";
@@ -62,14 +69,15 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   const [result, setResultRaw] = useState<any>(null);
   const [isPickerVisible, setPickerVisible] = useState(false);
   const [isSearchVisible, setSearchVisible] = useState(false);
-  const [storeMode, setStoreMode] = useState(false);
+  const [isMemoryStateVisible, setMemoryStateVisible] = useState(false);
+  const [selectedMemoryState, setSelectedMemoryState] = useState<string | null>(null);
   const [activeScope, setActiveScope] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
   const setLoading = (v: boolean) => { console.log('[AGENT STATE] setLoading:', v); setLoadingRaw(v); };
   const setResult = (v: any) => { 
     console.log('[AGENT STATE] setResult:', JSON.stringify(v)?.substring(0, 500)); 
     if (v && v.result && v.result.action && v.result.action.startsWith('DESIGN') && v.result.scope) {
       setActiveScope(v.result.scope);
-      if (!storeMode) setStoreMode(true);
     }
     setResultRaw(v); 
   };
@@ -287,10 +295,14 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
         setPickerVisible,
         isSearchVisible,
         setSearchVisible,
-        storeMode,
-        setStoreMode,
+        isMemoryStateVisible,
+        setMemoryStateVisible,
+        selectedMemoryState,
+        setSelectedMemoryState,
         activeScope,
         setActiveScope,
+        query,
+        setQuery,
       }}
     >
       {children}

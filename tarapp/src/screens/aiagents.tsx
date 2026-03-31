@@ -118,10 +118,15 @@ function StorePill({ activeScope, onChangeScope, onExit }: {
             <Ionicons name={showPicker ? 'chevron-up' : 'chevron-down'} size={12} color="#8E8E93" />
           </TouchableOpacity>
         ) : (
-          <View style={selectorStyles.scopePillMuted}>
+          <TouchableOpacity
+            style={selectorStyles.scopePillMuted}
+            onPress={() => setShowPicker(!showPicker)}
+            activeOpacity={0.7}
+          >
             <Ionicons name="storefront-outline" size={14} color="#8E8E93" />
             <Text style={selectorStyles.scopeTextMuted}>No store</Text>
-          </View>
+            <Ionicons name={showPicker ? 'chevron-up' : 'chevron-down'} size={12} color="#8E8E93" />
+          </TouchableOpacity>
         )}
 
         {slug && (
@@ -224,8 +229,9 @@ const selectorStyles = StyleSheet.create({
 // ─── Screen ───────────────────────────────────────────────────────────────
 
 export default function AgentsScreen() {
-  const { loading, result, storeMode, setStoreMode, activeScope, setActiveScope } = useAgentState();
-  console.log('[AGENTS SCREEN] render — loading:', loading, 'storeMode:', storeMode, 'activeScope:', activeScope, 'result:', !!result);
+  const { loading, result, activeScope, setActiveScope, selectedMemoryState, setQuery } = useAgentState();
+  const isSitesMode = selectedMemoryState === 'sites';
+  console.log('[AGENTS SCREEN] render — loading:', loading, 'isSitesMode:', isSitesMode, 'activeScope:', activeScope, 'result:', !!result);
 
   const renderResults = () => {
     console.log('[AGENTS SCREEN] renderResults called, result:', JSON.stringify(result));
@@ -240,7 +246,7 @@ export default function AgentsScreen() {
           <View style={styles.designHeader}>
             <Ionicons name="checkmark-circle" size={20} color="#34C759" />
             <Text style={styles.designTitle}>
-              {design.action === 'DESIGN' ? 'Store designed' : 'Design updated'}
+              {design.action === 'DESIGN' ? 'Site designed' : 'Site updated'}
             </Text>
           </View>
           {design.storeName && (
@@ -333,29 +339,55 @@ export default function AgentsScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.headerRow}>
-          {storeMode ? (
+          {isSitesMode ? (
             <StorePill
               activeScope={activeScope}
               onChangeScope={setActiveScope}
-              onExit={() => { setStoreMode(false); setActiveScope(null); }}
+              onExit={() => { setActiveScope(null); }}
             />
           ) : (
-            <Text style={styles.headerTitle}>Agents</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <Text style={styles.headerTitle}>Agents</Text>
+              {selectedMemoryState && (
+                <View style={{ backgroundColor: '#F2F2F7', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#8E8E93', textTransform: 'capitalize' }}>
+                    {selectedMemoryState}
+                  </Text>
+                </View>
+              )}
+            </View>
           )}
         </View>
 
-        {!result && !loading && !storeMode && (
+        {!result && !loading && !isSitesMode && (
           <View style={styles.empty}>
             <Text style={styles.emptyText}>Ask anything</Text>
             <Text style={styles.emptySub}>sell 2 shoes · create order · search products · start task…</Text>
           </View>
         )}
 
-        {!result && !loading && storeMode && (
+        {!result && !loading && isSitesMode && (
           <View style={styles.empty}>
-            <Ionicons name="storefront-outline" size={40} color="#FF2D55" />
-            <Text style={styles.emptyText}>Design your store</Text>
-            <Text style={styles.emptySub}>Describe your store and AI will generate the storefront design</Text>
+            <Ionicons name="globe-outline" size={40} color="#FF2D55" />
+            <Text style={styles.emptyText}>Create your site</Text>
+            <Text style={styles.emptySub}>The AI conversation asks for site name and site description to create a site.</Text>
+            
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
+              <TouchableOpacity
+                style={styles.suggestionPill}
+                activeOpacity={0.7}
+                onPress={() => setQuery("Create site ")}
+              >
+                <Text style={styles.suggestionPillText}>Create site</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.suggestionPill}
+                activeOpacity={0.7}
+                onPress={() => setQuery("Edit site ")}
+              >
+                <Text style={styles.suggestionPillText}>Edit site</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )}
 
@@ -363,7 +395,7 @@ export default function AgentsScreen() {
           <View style={styles.loading}>
             <ActivityIndicator size="small" color="#000" />
             <Text style={styles.loadingText}>
-              {storeMode ? 'Designing…' : 'Thinking…'}
+              {isSitesMode ? 'Designing…' : 'Thinking…'}
             </Text>
           </View>
         )}
@@ -394,6 +426,8 @@ const styles = StyleSheet.create({
   empty: { marginTop: '25%', alignItems: 'center', gap: 8 },
   emptyText: { fontSize: 18, fontWeight: '600', color: '#8E8E93' },
   emptySub: { fontSize: 14, color: '#C7C7CC', textAlign: 'center', lineHeight: 20 },
+  suggestionPill: { backgroundColor: '#F2F2F7', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 16 },
+  suggestionPillText: { fontSize: 14, fontWeight: '600', color: '#1C1C1E' },
   loading: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 60 },
   loadingText: { fontSize: 14, color: '#8E8E93', fontWeight: '500' },
 
