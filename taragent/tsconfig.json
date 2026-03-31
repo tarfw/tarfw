@@ -1,12 +1,5 @@
 {
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "ES2022",
-    "moduleResolution": "Bundler",
-    "strict": true,
-    "skipLibCheck": true,
-    "lib": ["ES2022"],
-    "types": ["@cloudflare/workers-types"]
-  },
+  "extends": "agents/tsconfig",
+  "compilerOptions": {},
   "exclude": ["tarapp", "node_modules"]
 }
