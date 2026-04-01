@@ -14,6 +14,16 @@ export function getStatesDbClient(url: string, authToken: string): Client {
 }
 
 /**
+ * Get the Auth DB client (users, sessions, user_scopes tables)
+ */
+export function getAuthDbClient(url: string, authToken: string): Client {
+  if (!url || !authToken) {
+    throw new Error("AUTH_DB_URL or AUTH_DB_TOKEN environment variables are not set.");
+  }
+  return createClient({ url, authToken });
+}
+
+/**
  * Get the Instances DB client (instance + events tables)
  */
 export function getInstancesDbClient(url: string, authToken: string): Client {

@@ -2,7 +2,7 @@ import { GoogleSignin, GoogleSigninButton, statusCodes } from '@react-native-goo
 import * as SecureStore from 'expo-secure-store';
 
 // Backend auth API endpoints
-const AUTH_API_BASE = "https://taragent.wetarteam.workers.dev";
+const AUTH_API_BASE = "https://taragent.tar-54d.workers.dev";
 
 // Storage keys
 const TOKEN_KEY = 'auth_token';

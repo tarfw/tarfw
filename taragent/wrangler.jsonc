@@ -8,7 +8,9 @@
     "STATES_DB_URL": "libsql://states-tarframework.aws-eu-west-1.turso.io",
     "STATES_DB_TOKEN": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NzQwNzk5NzQsImlkIjoiMDE5ZDBmNTYtNDAwMS03YWExLThkNWQtOGY1YzkyZGFlMDc2IiwicmlkIjoiZDNmZjRhN2MtOThkZi00OTg3LWJjYjUtMjRlNGEwYTI3OWE1In0.HuH6t-vXlSuvnexhyqU-bEZffYQEPp8bITBD0hzi4Kcmb53XqvzBZUtz8QCjVO9HyOzB9ujnbDtB_maJN8-DAw",
     "INSTANCES_DB_URL": "libsql://instances-tarframework.aws-eu-west-1.turso.io",
-    "INSTANCES_DB_TOKEN": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NzQxOTQ0MDEsImlkIjoiMDE5ZDBmNTYtYTEwMS03OWE2LWJhYWMtY2Y4YjFiNGJjNDE3IiwicmlkIjoiMmNkM2U4OGItNGU0ZS00NTgzLWI1OGMtYzVjZGIzYjI3NzAyIn0.CaAlMH84Tk3LWiGyeY1--0dxmKd4k9lE2RyfSGPcX8bewQCIXpFagYT2SeMVCvvbvRxrSD5pM5dwABNTddcHCQ"
+    "INSTANCES_DB_TOKEN": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NzQxOTQ0MDEsImlkIjoiMDE5ZDBmNTYtYTEwMS03OWE2LWJhYWMtY2Y4YjFiNGJjNDE3IiwicmlkIjoiMmNkM2U4OGItNGU0ZS00NTgzLWI1OGMtYzVjZGIzYjI3NzAyIn0.CaAlMH84Tk3LWiGyeY1--0dxmKd4k9lE2RyfSGPcX8bewQCIXpFagYT2SeMVCvvbvRxrSD5pM5dwABNTddcHCQ",
+    "AUTH_DB_URL": "libsql://auth-tarframework.aws-eu-west-1.turso.io",
+    "AUTH_DB_TOKEN": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NzUwNTA0NjUsImlkIjoiMDE5ZDQ5NDAtODcwMS03NTc5LWFhYmQtYmM1NGI4NjFhNjJjIiwicmlkIjoiMTUzMmRmOTgtYjE1ZS00ZTYyLWJkNDItMDMyNzA5MDQzMDExIn0.X1l6ft94RlLU2UL6nOvcK-PEMVwqThS7OXmWnxxDAcy1GyfHLC9b_8U6cBM6ekwQ5meQEpYMic4W1VudHps_Cw"
   },
   "durable_objects": {
     "bindings": [
@@ -19,10 +21,6 @@
       {
         "name": "ORDER_DO",
         "class_name": "OrderDO"
-      },
-      {
-        "name": "SESSION_DO",
-        "class_name": "SessionDO"
       }
     ]
   },
@@ -35,6 +33,10 @@
       "tag": "v2",
       "new_sqlite_classes": ["TarAgent"],
       "deleted_classes": ["ConversationDO", "TaskDO"]
+    },
+    {
+      "tag": "v3",
+      "deleted_classes": ["SessionDO"]
     }
   ]
 }

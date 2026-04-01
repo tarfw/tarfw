@@ -3,11 +3,11 @@ import { getStatesDbClient, getInstancesDbClient } from "./db/client";
 import { InterpreterAgent } from "./agents/interpreter";
 import { SearchAgent } from "./agents/search";
 import { DesignAgent } from "./agents/design";
+import { authDb, verifyGoogleToken, upsertGoogleUser, createSession, validateSession, deleteSession, getUserScopes, addScopeToUser, authenticateRequest } from "./auth";
 
 // Re-export Durable Objects for Wrangler binding
 export { TarAgent } from "./agent";
 export { OrderDO } from "./do/order";
-export { SessionDO } from "./do/session";
 
 // ─── CORS helper ───
 function corsHeaders(headers: Record<string, string> = {}): Record<string, string> {
@@ -24,29 +24,6 @@ function jsonResponse(data: any, status = 200): Response {
   return new Response(JSON.stringify(data), { status, headers: corsHeaders() });
 }
 
-// ─── Auth helper ───
-async function getSessionStub(env: Env) {
-  return env.SESSION_DO.get(env.SESSION_DO.idFromName("auth"));
-}
-
-async function proxyToSession(request: Request, env: Env, path: string, method: string, body?: any): Promise<Response> {
-  const stub = await getSessionStub(env);
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  const authHeader = request.headers.get("Authorization");
-  if (authHeader) headers["Authorization"] = authHeader;
-
-  const response = await stub.fetch(new Request(`http://localhost${path}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  }));
-
-  const data = await response.json();
-  return new Response(JSON.stringify(data), {
-    status: response.status,
-    headers: corsHeaders(),
-  });
-}
 
 // ─── TarAgent RPC helper ───
 function getTarAgentStub(env: Env, scope: string = "default") {
@@ -69,23 +46,41 @@ export default {
       return jsonResponse({ status: "ok", agent: "taragent" });
     }
 
-    // ─── Auth routes → SessionDO ───
+    // ─── Auth routes → Turso auth DB ───
     if (path === "/api/auth/google" && request.method === "POST") {
-      const body = await request.json();
-      return proxyToSession(request, env, "/auth/google", "POST", body);
+      const body = await request.json() as any;
+      if (!body.google_token) return jsonResponse({ error: "google_token required" }, 400);
+      const googleUser = await verifyGoogleToken(body.google_token);
+      if (!googleUser) return jsonResponse({ error: "Invalid Google token" }, 401);
+      const db = authDb(env);
+      const user = await upsertGoogleUser(db, googleUser);
+      const session = await createSession(db, user.id);
+      const scopes = await getUserScopes(db, user.id);
+      return jsonResponse({ success: true, user: { id: user.id, email: user.email, name: user.name, picture: user.picture }, token: session.token, expires_at: session.expires_at, scopes });
     }
     if (path === "/api/auth/me" && request.method === "GET") {
-      return proxyToSession(request, env, "/auth/me", "GET");
+      const auth = await authenticateRequest(env, request);
+      if (auth instanceof Response) return new Response(auth.body, { status: auth.status, headers: corsHeaders() });
+      return jsonResponse({ success: true, user: auth.user, scopes: auth.scopes });
     }
     if (path === "/api/auth/logout" && request.method === "POST") {
-      return proxyToSession(request, env, "/auth/logout", "POST");
+      const authHeader = request.headers.get("Authorization");
+      if (!authHeader?.startsWith("Bearer ")) return jsonResponse({ error: "Unauthorized" }, 401);
+      await deleteSession(authDb(env), authHeader.slice(7));
+      return jsonResponse({ success: true, message: "Logged out" });
     }
     if (path === "/api/auth/scopes" && request.method === "GET") {
-      return proxyToSession(request, env, "/auth/scopes", "GET");
+      const auth = await authenticateRequest(env, request);
+      if (auth instanceof Response) return new Response(auth.body, { status: auth.status, headers: corsHeaders() });
+      return jsonResponse({ success: true, scopes: auth.scopes });
     }
     if (path === "/api/auth/scopes" && request.method === "POST") {
-      const body = await request.json();
-      return proxyToSession(request, env, "/auth/scopes", "POST", body);
+      const auth = await authenticateRequest(env, request);
+      if (auth instanceof Response) return new Response(auth.body, { status: auth.status, headers: corsHeaders() });
+      const body = await request.json() as any;
+      if (!body.scope) return jsonResponse({ error: "scope required" }, 400);
+      await addScopeToUser(authDb(env), auth.user_id, body.scope, "owner");
+      return jsonResponse({ success: true, scope: body.scope }, 201);
     }
 
     // ─── WebSocket proxy to OrderDO ───
