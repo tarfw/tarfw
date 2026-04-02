@@ -14,11 +14,9 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { STATE_TYPES, StateTypeDef } from '../src/config/stateSchemas';
-import { getAllStates } from '../src/db/turso';
+import { STATE_TYPES, StateTypeDef, getStateType } from '../src/config/stateSchemas';
 import { createTask } from '../src/db/eventsDb';
 import { OrderScreen } from './OrderScreen';
-import { useAgentState } from '@/hooks/useAgentState';
 
 interface Props {
   visible: boolean;
@@ -42,26 +40,27 @@ export const MEMORY_TYPES: (StateTypeDef | { type: string; label: string; icon: 
 
 export function AddMemories({ visible, onClose, onSelect, onSelectStateForInstance }: Props) {
   const insets = useSafeAreaInsets();
-  const [showStatePicker, setShowStatePicker] = useState(false);
-  const [showTaskForm, setShowTaskForm] = useState(false);
+  // View state: 'main' | 'statePicker' | 'taskForm' | 'order'
+  const [view, setView] = useState<'main' | 'statePicker' | 'taskForm' | 'order'>('main');
   const [states, setStates] = useState<any[]>([]);
+  const [filteredStates, setFilteredStates] = useState<any[]>([]);
+  const [stateSearch, setStateSearch] = useState('');
   const [loading, setLoading] = useState(false);
-  
+
   // Task form state
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDescription, setTaskDescription] = useState('');
   const [taskPriority, setTaskPriority] = useState<'low' | 'normal' | 'high' | 'urgent'>('normal');
   const [taskDueDate, setTaskDueDate] = useState('');
   const [savingTask, setSavingTask] = useState(false);
-  const [showOrderScreen, setShowOrderScreen] = useState(false);
 
-  // Reset state picker when modal closes
+  // Reset when modal closes
   useEffect(() => {
     if (!visible) {
-      setShowStatePicker(false);
-      setShowTaskForm(false);
-      setShowOrderScreen(false);
-      // Reset task form
+      setView('main');
+      setStates([]);
+      setFilteredStates([]);
+      setStateSearch('');
       setTaskTitle('');
       setTaskDescription('');
       setTaskPriority('normal');
@@ -69,56 +68,53 @@ export function AddMemories({ visible, onClose, onSelect, onSelectStateForInstan
     }
   }, [visible]);
 
-  const handleSelect = (item: StateTypeDef | { type: string }) => {
-    console.log('[addmemories] handleSelect called with:', item.type);
-    
-    if (item.type === 'inventory') {
-      // Show state picker for inventory
-      console.log('[addmemories] Opening state picker for inventory');
-      setShowStatePicker(true);
+  // Load states when state picker view opens
+  useEffect(() => {
+    if (view === 'statePicker' && visible) {
       loadStates();
+    }
+  }, [view, visible]);
+
+  // Filter states by search query
+  useEffect(() => {
+    if (!stateSearch) {
+      setFilteredStates(states);
+    } else {
+      const q = stateSearch.toLowerCase();
+      setFilteredStates(states.filter(s =>
+        s.title?.toLowerCase().includes(q) ||
+        s.ucode?.toLowerCase().includes(q) ||
+        s.type?.toLowerCase().includes(q)
+      ));
+    }
+  }, [states, stateSearch]);
+
+  const handleSelect = (item: StateTypeDef | { type: string }) => {
+    if (item.type === 'inventory') {
+      setView('statePicker');
     } else if (item.type === 'order') {
-      console.log('[addmemories] Opening order screen');
-      setShowOrderScreen(true);
+      setView('order');
     } else if (item.type === 'tasks') {
-      // Show task creation form
-      console.log('[addmemories] Opening task creation form');
-      setShowTaskForm(true);
+      setView('taskForm');
     } else if (item.type === 'tokens') {
-      console.log('[addmemories] Opening tokens screen');
       router.push('/tokens');
       onClose();
     } else if (item.type === 'channels') {
-      console.log('[addmemories] Opening channels screen');
       router.push('/channels');
       onClose();
     } else if (item.type === 'profile') {
-      console.log('[addmemories] Opening profile screen');
       router.push('/profile');
       onClose();
     } else {
-      console.log('[addmemories] Selecting memory type:', item.type);
       onSelect(item as StateTypeDef);
     }
   };
 
   const handleCreateTask = async () => {
-    console.log('[addmemories] handleCreateTask called, title:', taskTitle.trim());
-    
-    if (!taskTitle.trim()) {
-      console.log('[addmemories] Task title is empty, skipping');
-      return;
-    }
+    if (!taskTitle.trim()) return;
     
     setSavingTask(true);
     try {
-      console.log('[addmemories] Calling createTask with:', {
-        title: taskTitle.trim(),
-        description: taskDescription.trim() || undefined,
-        priority: taskPriority,
-        due_date: taskDueDate || undefined,
-      });
-      
       const result = await createTask({
         title: taskTitle.trim(),
         description: taskDescription.trim() || undefined,
@@ -126,39 +122,49 @@ export function AddMemories({ visible, onClose, onSelect, onSelectStateForInstan
         due_date: taskDueDate || undefined,
       });
       
-      console.log('[addmemories] createTask result:', result);
-      
       if (result.success) {
-        setShowTaskForm(false);
+        setView('main');
         setTaskTitle('');
         setTaskDescription('');
         setTaskPriority('normal');
         setTaskDueDate('');
         onClose();
-      } else {
-        console.error('[addmemories] Task creation failed:', result.error);
       }
     } catch (e: any) {
-      console.error('[addmemories] Task creation error:', e.message);
+      console.error('Task creation error:', e.message);
     } finally {
       setSavingTask(false);
     }
   };
 
   const loadStates = async () => {
+    console.log('[addmemories] loadStates START');
     setLoading(true);
+    
     try {
-      const allStates = await getAllStates('shop:main');
-      setStates(allStates);
-    } catch (e) {
+      // Use public states API directly (same as discover.tsx which works)
+      const { listPublicStatesApi } = await import('../src/api/client');
+      const result = await listPublicStatesApi(undefined, undefined, 50);
+      console.log('[addmemories] API result:', JSON.stringify(result).substring(0, 400));
+      
+      const statesData = result?.result || [];
+      console.log('[addmemories] statesData:', statesData.length, 'items');
+      
+      // Force update both states
+      setStates([...statesData]);
+      setFilteredStates([...statesData]);
+      console.log('[addmemories] States set, count:', statesData.length);
+    } catch (e: any) {
+      console.error('[addmemories] loadStates error:', e?.message);
       setStates([]);
+      setFilteredStates([]);
     } finally {
       setLoading(false);
     }
   };
 
   const handleStateSelect = (state: any) => {
-    setShowStatePicker(false);
+    setView('main');
     onSelectStateForInstance({ ucode: state.ucode, title: state.title });
   };
 
@@ -173,27 +179,48 @@ export function AddMemories({ visible, onClose, onSelect, onSelectStateForInstan
     }
   };
 
-  if (showOrderScreen) {
+  if (view === 'order') {
     return (
       <Modal animationType="slide" visible={visible} onRequestClose={onClose}>
         <OrderScreen
-          onClose={() => { setShowOrderScreen(false); onClose(); }}
-          onCancel={() => setShowOrderScreen(false)}
+          onClose={() => { setView('main'); onClose(); }}
+          onCancel={() => setView('main')}
         />
       </Modal>
     );
   }
 
-  if (showStatePicker) {
+  if (view === 'statePicker') {
     return (
       <Modal animationType="slide" visible={visible} onRequestClose={onClose}>
         <View style={styles.safe}>
           <View style={[styles.header, { paddingTop: Math.max(insets.top, 16) }]}>
-            <TouchableOpacity onPress={() => setShowStatePicker(false)} hitSlop={8}>
+            <TouchableOpacity onPress={() => setView('main')} hitSlop={8}>
               <Ionicons name="arrow-back" size={22} color="#999" />
             </TouchableOpacity>
             <Text style={styles.title}>Select State</Text>
             <View style={{ width: 22 }} />
+          </View>
+
+          {/* Search */}
+          <View style={styles.searchWrapper}>
+            <View style={styles.searchContainer}>
+              <Ionicons name="search" size={16} color="#8E8E93" />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search products, services..."
+                placeholderTextColor="#8E8E93"
+                value={stateSearch}
+                onChangeText={setStateSearch}
+                autoCorrect={false}
+                autoCapitalize="none"
+              />
+              {stateSearch ? (
+                <TouchableOpacity onPress={() => setStateSearch('')}>
+                  <Ionicons name="close-circle" size={16} color="#C7C7CC" />
+                </TouchableOpacity>
+              ) : null}
+            </View>
           </View>
 
           {loading ? (
@@ -202,27 +229,46 @@ export function AddMemories({ visible, onClose, onSelect, onSelectStateForInstan
             </View>
           ) : (
             <FlatList
-              data={states}
+              data={filteredStates}
               keyExtractor={(item) => item.ucode}
               contentContainerStyle={[styles.list, { paddingBottom: Math.max(insets.bottom, 40) }]}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.row}
-                  activeOpacity={0.5}
-                  onPress={() => handleStateSelect(item)}
-                >
-                  <Ionicons name="cube-outline" size={22} color="#007AFF" />
-                  <View style={styles.stateInfo}>
-                    <Text style={styles.stateTitle}>{item.title || item.ucode}</Text>
-                    <Text style={styles.stateUcode}>{item.ucode}</Text>
-                  </View>
-                </TouchableOpacity>
-              )}
+              renderItem={({ item }) => {
+                const typeInfo = getStateType(item.type) || { icon: 'pricetag-outline', color: '#8E8E93', label: item.type };
+                const payload = (() => { try { return typeof item.payload === 'string' ? JSON.parse(item.payload) : (item.payload || {}); } catch { return {}; } })();
+                return (
+                  <TouchableOpacity
+                    style={styles.stateRow}
+                    activeOpacity={0.5}
+                    onPress={() => handleStateSelect(item)}
+                  >
+                    <View style={[styles.stateIcon, { backgroundColor: typeInfo.color + '15' }]}>
+                      <Ionicons name={typeInfo.icon as any} size={18} color={typeInfo.color} />
+                    </View>
+                    <View style={styles.stateInfo}>
+                      <Text style={styles.stateTitle} numberOfLines={1}>{item.title || item.ucode}</Text>
+                      <Text style={styles.stateUcode} numberOfLines={1}>
+                        {item.ucode} · {typeInfo.label}
+                        {payload.price ? ` · ₹${payload.price}` : ''}
+                      </Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={16} color="#AEAEB2" />
+                  </TouchableOpacity>
+                );
+              }}
               ItemSeparatorComponent={() => <View style={styles.sep} />}
               ListEmptyComponent={
                 <View style={styles.emptyContainer}>
-                  <Text style={styles.emptyText}>No states yet</Text>
-                  <Text style={styles.emptySubText}>Create a state first (Product, Service, etc.)</Text>
+                  <View style={styles.emptyIconWrap}>
+                    <Ionicons name="cube-outline" size={28} color="#AEAEB2" />
+                  </View>
+                  <Text style={styles.emptyText}>
+                    {stateSearch ? 'No matching states' : 'No states yet'}
+                  </Text>
+                  <Text style={styles.emptySubText}>
+                    {stateSearch
+                      ? `Nothing matches "${stateSearch}"`
+                      : 'Create a Product or Service first, then add inventory'}
+                  </Text>
                 </View>
               }
             />
@@ -233,7 +279,7 @@ export function AddMemories({ visible, onClose, onSelect, onSelectStateForInstan
   }
 
   // Task creation form modal
-  if (showTaskForm) {
+  if (view === 'taskForm') {
     return (
       <Modal animationType="slide" visible={visible} onRequestClose={onClose}>
         <KeyboardAvoidingView 
@@ -241,7 +287,7 @@ export function AddMemories({ visible, onClose, onSelect, onSelectStateForInstan
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           <View style={[styles.header, { paddingTop: Math.max(insets.top, 16) }]}>
-            <TouchableOpacity onPress={() => setShowTaskForm(false)} hitSlop={8}>
+            <TouchableOpacity onPress={() => setView('main')} hitSlop={8}>
               <Ionicons name="arrow-back" size={22} color="#999" />
             </TouchableOpacity>
             <Text style={styles.title}>New Task</Text>
@@ -391,10 +437,42 @@ const styles = StyleSheet.create({
     height: StyleSheet.hairlineWidth,
     backgroundColor: '#F0F0F0',
   },
+  // Search
+  searchWrapper: {
+    paddingHorizontal: 20,
+    marginBottom: 12,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F2F2F7',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    height: 36,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    color: '#1C1C1E',
+    marginLeft: 8,
+    paddingVertical: 0,
+  },
   // State picker styles
+  stateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  stateIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 9,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   stateInfo: {
     flex: 1,
-    marginLeft: 14,
+    marginLeft: 12,
   },
   stateTitle: {
     fontSize: 16,
@@ -417,6 +495,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: 60,
   },
+  emptyIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#F2F2F7',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
   emptyText: {
     fontSize: 17,
     fontWeight: '600',
@@ -427,6 +514,7 @@ const styles = StyleSheet.create({
     color: '#AEAEB2',
     marginTop: 4,
     textAlign: 'center',
+    paddingHorizontal: 32,
   },
   // Task form styles
   taskSafe: { flex: 1, backgroundColor: '#FFF' },

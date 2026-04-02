@@ -23,33 +23,28 @@ export function authDb(env: Env): Client {
 }
 
 // ─── Google Token Verification ───
-export async function verifyGoogleToken(token: string): Promise<{ sub: string; email: string; name?: string; picture?: string } | null> {
+export async function verifyGoogleToken(token: string, clientId?: string): Promise<{ sub: string; email: string; name?: string; picture?: string } | null> {
   try {
     const response = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${token}`);
 
     if (response.ok) {
       const data = await response.json() as Record<string, string>;
+      
+      // Verify audience if provided
+      if (clientId && data.aud !== clientId) {
+        console.error('[Auth] Token audience mismatch:', data.aud, 'expected:', clientId);
+        return null;
+      }
+      
       if (!data.sub || !data.email) return null;
       return { sub: data.sub, email: data.email, name: data.name, picture: data.picture };
     }
 
-    // Fallback: decode JWT directly (Android tokens may fail tokeninfo)
-    const parts = token.split('.');
-    if (parts.length !== 3) return null;
-
-    const payloadBase64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-    const payload = JSON.parse(atob(payloadBase64)) as Record<string, string | number>;
-
-    if (payload.iss !== 'https://accounts.google.com') return null;
-    if (!payload.sub || !payload.email) return null;
-
-    return {
-      sub: payload.sub as string,
-      email: payload.email as string,
-      name: payload.name as string | undefined,
-      picture: payload.picture as string | undefined,
-    };
-  } catch {
+    // REMOVED INSECURE FALLBACK: decoding JWT directly without signature verification is unsafe.
+    // If tokeninfo fails, we simply reject the token.
+    return null;
+  } catch (error) {
+    console.error('[Auth] verifyGoogleToken error:', error);
     return null;
   }
 }

@@ -43,6 +43,7 @@ function useDebounce<T>(value: T, delay: number): T {
 export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
   const isAgentsTab = state.routes[state.index]?.name === 'agents';
+  const agentsIndex = state.routes.findIndex(r => r.name === 'agents');
   const { visible: keyboardVisible, height: keyboardHeight } = useKeyboard();
   const { loading, setLoading, setResult, setPickerVisible, setSearchVisible, setMemoryStateVisible, selectedMemoryState, activeScope, setActiveScope, query, setQuery } = useAgentState();
   const isSitesMode = selectedMemoryState === 'sites';
@@ -318,6 +319,8 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
         return <Feather name="square" size={size} color={color} />;
       case 'memories':
         return <Ionicons name="cube-outline" size={size} color={color} />;
+      case 'discover':
+        return <Ionicons name="globe-outline" size={size} color={color} />;
       default:
         return null;
     }
@@ -418,10 +421,11 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
         {!keyboardVisible && (
           <BlurView intensity={80} tint="light" style={styles.barContainer}>
             <View style={styles.tabRow}>
-              {/* LEFT SECTION: Toggle cluster for Workspace & Memories */}
+              {/* LEFT SECTION: Toggle cluster for Workspace, Memories & Discover */}
               <View style={styles.leftSection}>
                 <View style={styles.toggleCluster}>
-                  {state.routes.slice(0, 2).map((route, index) => {
+                  {state.routes.filter(r => r.name !== 'agents').map((route) => {
+                    const index = state.routes.indexOf(route);
                     const isFocused = state.index === index;
                     const onPress = () => {
                       if (process.env.EXPO_OS === 'ios') {
@@ -457,8 +461,8 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
               {/* CENTER SECTION: Agents Tab */}
               <View style={styles.centerSection}>
                 {(() => {
-                  const route = state.routes[2];
-                  const isFocused = state.index === 2;
+                  const route = state.routes[agentsIndex];
+                  const isFocused = state.index === agentsIndex;
                   const onPress = () => {
                     if (process.env.EXPO_OS === 'ios') {
                       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);

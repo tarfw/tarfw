@@ -15,6 +15,7 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
 export const CHANNEL_URL = `${API_BASE_URL}/api/channel`;
 export const STATE_URL = `${API_BASE_URL}/api/state`;
 export const STATES_LIST_URL = `${API_BASE_URL}/api/states`;
+export const PUBLIC_STATES_URL = `${API_BASE_URL}/api/states/public`;
 export const STATEAI_URL = `${API_BASE_URL}/api/stateai`;
 export const SEARCH_URL = `${API_BASE_URL}/api/search`;
 export const INSTANCE_URL = `${API_BASE_URL}/api/instance`;
@@ -72,12 +73,12 @@ export async function sendChannelMessage(req: {
 
 // ─── State API (direct CRUD — no workspace live stream, no instance, no broadcast) ───
 
-export async function createStateApi(ucode: string, title: string | undefined, payload: any, scope = "shop:main") {
+export async function createStateApi(ucode: string, title: string | undefined, payload: any, scope = "shop:main", isPublic = false) {
   const headers = await getAuthHeaders();
   const response = await fetch(STATE_URL, {
     method: "POST",
     headers,
-    body: JSON.stringify({ ucode, title, payload, scope }),
+    body: JSON.stringify({ ucode, title, payload, scope, public: isPublic }),
   });
   if (!response.ok) throw new Error(`State CREATE Error: ${response.status}`);
   return response.json();
@@ -87,8 +88,9 @@ export async function createStateApi(ucode: string, title: string | undefined, p
 export async function listStatesApi(scope = "shop:main", type?: string, limit = 50) {
   const params = new URLSearchParams({ scope });
   if (type) params.set('type', type);
-  params.set('limit', limit.toString());    const headers = await getAuthHeaders();
-    const response = await fetch(`${STATES_LIST_URL}?${params.toString()}`, {
+  params.set('limit', limit.toString());
+  const headers = await getAuthHeaders();
+  const response = await fetch(`${STATES_LIST_URL}?${params.toString()}`, {
     method: "GET",
     headers,
   });
@@ -123,6 +125,18 @@ export async function readStateApi(ucode: string, scope = "shop:main") {
     `${STATE_URL}/${encodeURIComponent(ucode)}?scope=${encodeURIComponent(scope)}`
   );
   if (!response.ok) throw new Error(`State READ Error: ${response.status}`);
+  return response.json();
+}
+
+// ─── Public States API (discover public states across all scopes) ───
+
+export async function listPublicStatesApi(type?: string, q?: string, limit = 50) {
+  const params = new URLSearchParams();
+  if (type) params.set('type', type);
+  if (q) params.set('q', q);
+  params.set('limit', limit.toString());
+  const response = await fetch(`${PUBLIC_STATES_URL}?${params.toString()}`);
+  if (!response.ok) throw new Error(`Public States LIST Error: ${response.status}`);
   return response.json();
 }
 

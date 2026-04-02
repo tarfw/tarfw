@@ -56,7 +56,7 @@ export default {
     if (path === "/api/auth/google" && request.method === "POST") {
       const body = await request.json() as any;
       if (!body.google_token) return jsonResponse({ error: "google_token required" }, 400);
-      const googleUser = await verifyGoogleToken(body.google_token);
+      const googleUser = await verifyGoogleToken(body.google_token, env.GOOGLE_CLIENT_ID);
       if (!googleUser) return jsonResponse({ error: "Invalid Google token" }, 401);
       const db = authDb(env);
       const user = await upsertGoogleUser(db, googleUser);
@@ -111,23 +111,27 @@ export default {
 
     // ─── REST compat: State CRUD → TarAgent @callable() ───
     if (path === "/api/state" && request.method === "POST") {
+      const auth = await authenticateRequest(env, request);
+      if (auth instanceof Response) return new Response(auth.body, { status: auth.status, headers: corsHeaders() });
       const body = await request.json() as any;
       const stub = getTarAgentStub(env, body.scope || "default");
-      const result = await stub.callCreateState(body);
+      const result = await stub.callCreateState({ ...body, userid: auth.user_id });
       return jsonResponse(result, 201);
     }
     if (path.startsWith("/api/state/") && request.method === "PUT") {
+      const auth = await authenticateRequest(env, request);
+      if (auth instanceof Response) return new Response(auth.body, { status: auth.status, headers: corsHeaders() });
       const ucode = path.split("/api/state/")[1];
       const body = await request.json() as any;
       const stub = getTarAgentStub(env, body.scope || "default");
-      const result = await stub.callUpdateState({ ucode, ...body });
+      const result = await stub.callUpdateState({ ucode, ...body, userid: auth.user_id });
       return jsonResponse(result);
     }
     if (path.startsWith("/api/state/") && request.method === "DELETE") {
+      const auth = await authenticateRequest(env, request);
+      if (auth instanceof Response) return new Response(auth.body, { status: auth.status, headers: corsHeaders() });
       const ucode = path.split("/api/state/")[1];
       const scope = url.searchParams.get("scope") || "shop:main";
-      const stub = getTarAgentStub(env, scope);
-      // Direct DB call for delete (simple enough)
       const db = getStatesDbClient(env.STATES_DB_URL, env.STATES_DB_TOKEN);
       await db.execute({ sql: "DELETE FROM state WHERE ucode = ? AND scope = ?", args: [ucode, scope] });
       return jsonResponse({ success: true, result: { ucode, deleted: true } });
@@ -137,11 +141,25 @@ export default {
       const scope = url.searchParams.get("scope") || "shop:main";
       const db = getStatesDbClient(env.STATES_DB_URL, env.STATES_DB_TOKEN);
       const result = await db.execute({
-        sql: "SELECT id, ucode, type, title, payload, scope, created_at FROM state WHERE ucode = ? AND scope = ?",
+        sql: "SELECT id, ucode, type, title, payload, scope, userid, public, ts FROM state WHERE ucode = ? AND scope = ?",
         args: [ucode, scope],
       });
       if (result.rows.length === 0) return jsonResponse({ error: "Not found" }, 404);
       return jsonResponse({ success: true, result: result.rows[0] });
+    }
+    if (path === "/api/states/public" && request.method === "GET") {
+      const type = url.searchParams.get("type");
+      const limit = parseInt(url.searchParams.get("limit") || "50");
+      const q = url.searchParams.get("q");
+      const db = getStatesDbClient(env.STATES_DB_URL, env.STATES_DB_TOKEN);
+      let sql = "SELECT id, ucode, type, title, payload, scope, userid, ts FROM state WHERE public = 1";
+      const args: any[] = [];
+      if (type) { sql += " AND type = ?"; args.push(type); }
+      if (q) { sql += " AND title LIKE ?"; args.push(`%${q}%`); }
+      sql += " ORDER BY ts DESC LIMIT ?";
+      args.push(limit);
+      const result = await db.execute({ sql, args });
+      return jsonResponse({ success: true, result: result.rows });
     }
     if (path === "/api/states" && request.method === "GET") {
       const scope = url.searchParams.get("scope") || "shop:main";

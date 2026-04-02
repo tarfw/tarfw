@@ -1016,7 +1016,7 @@ export class DesignAgent {
     scope: string;
     userId: string;
   }): Promise<{ success: boolean; templateId: string; store: any; message: string }> {
-    const { text, scope } = req;
+    const { text, scope, userId } = req;
     console.log('[DESIGN AGENT] generateDesign called, text:', text, 'scope:', scope);
 
     // 1. Pick best template (quick keyword match or AI)
@@ -1030,21 +1030,21 @@ export class DesignAgent {
 
     // 3. Write store config state
     console.log('[DESIGN AGENT] Step 3 — writing store config...');
-    await this.writeStoreConfig(scope, customization);
+    await this.writeStoreConfig(scope, customization, userId);
     console.log('[DESIGN AGENT] Step 3 done');
 
     // 4. Write template sections to DB
     const tplSections = TEMPLATE_SECTIONS[customization.templateId || templateId];
     console.log('[DESIGN AGENT] Step 4 — writing sections, template found:', !!tplSections);
     if (tplSections) {
-      await this.writeSections(scope, tplSections);
+      await this.writeSections(scope, tplSections, userId);
       console.log('[DESIGN AGENT] Step 4 done — sections written');
     }
 
     // 5. Write CMS pages
     console.log('[DESIGN AGENT] Step 5 — writing CMS pages, has pages:', !!customization.pages);
     if (customization.pages) {
-      await this.writePages(scope, customization.pages);
+      await this.writePages(scope, customization.pages, userId);
       console.log('[DESIGN AGENT] Step 5 done');
     }
 
@@ -1067,7 +1067,7 @@ export class DesignAgent {
     scope: string;
     userId: string;
   }): Promise<{ success: boolean; message: string }> {
-    const { text, scope } = req;
+    const { text, scope, userId } = req;
 
     // Read current store config
     const current = await this.statesDb.execute({
@@ -1114,7 +1114,7 @@ export class DesignAgent {
 
       // Update pages if included
       if (patch.pages) {
-        await this.writePages(scope, patch.pages);
+        await this.writePages(scope, patch.pages, userId);
       }
     }
 
@@ -1153,7 +1153,7 @@ export class DesignAgent {
       } else {
         await this.statesDb.execute({
           sql: `INSERT OR REPLACE INTO state (id, ucode, type, title, payload, scope) VALUES (?, ?, 'section', ?, ?, ?)`,
-          args: [crypto.randomUUID(), sec.ucode, sec.title, sec.payload, scope],
+          args: [crypto.randomUUID(), sec.ucode, sec.title, sec.payload, scope],  // revert preserves original data, no userid change
         });
       }
     }
@@ -1303,7 +1303,7 @@ Example: if user says "change tagline", output: {"tagline":"new tagline"}`;
   }
 
   /** Write store config to states DB */
-  private async writeStoreConfig(scope: string, customization: any) {
+  private async writeStoreConfig(scope: string, customization: any, userId?: string) {
     const slug = scope.replace('shop:', '');
     const ucode = `store:${slug}`;
     console.log('[DESIGN AGENT] writeStoreConfig — ucode:', ucode, 'scope:', scope);
@@ -1340,14 +1340,14 @@ Example: if user says "change tagline", output: {"tagline":"new tagline"}`;
       });
     } else {
       await this.statesDb.execute({
-        sql: `INSERT OR REPLACE INTO state (id, ucode, type, title, payload, scope) VALUES (?, ?, 'store', ?, ?, ?)`,
-        args: [crypto.randomUUID(), ucode, store.storeName || slug, JSON.stringify(payload), scope],
+        sql: `INSERT OR REPLACE INTO state (id, ucode, type, title, payload, scope, userid) VALUES (?, ?, 'store', ?, ?, ?, ?)`,
+        args: [crypto.randomUUID(), ucode, store.storeName || slug, JSON.stringify(payload), scope, userId || null],
       });
     }
   }
 
   /** Write template sections as type='section' state records */
-  private async writeSections(scope: string, tpl: TemplateSections) {
+  private async writeSections(scope: string, tpl: TemplateSections, userId?: string) {
     const pageLayout = tpl.pages.home || [];
     for (let i = 0; i < pageLayout.length; i++) {
       const sectionKey = pageLayout[i];
@@ -1370,8 +1370,8 @@ Example: if user says "change tagline", output: {"tagline":"new tagline"}`;
         });
       } else {
         await this.statesDb.execute({
-          sql: `INSERT OR REPLACE INTO state (id, ucode, type, title, payload, scope) VALUES (?, ?, 'section', ?, ?, ?)`,
-          args: [crypto.randomUUID(), ucode, sectionKey, payload, scope],
+          sql: `INSERT OR REPLACE INTO state (id, ucode, type, title, payload, scope, userid) VALUES (?, ?, 'section', ?, ?, ?, ?)`,
+          args: [crypto.randomUUID(), ucode, sectionKey, payload, scope, userId || null],
         });
       }
     }
@@ -1393,15 +1393,15 @@ Example: if user says "change tagline", output: {"tagline":"new tagline"}`;
         });
       } else {
         await this.statesDb.execute({
-          sql: `INSERT OR REPLACE INTO state (id, ucode, type, title, payload, scope) VALUES (?, ?, 'section', ?, ?, ?)`,
-          args: [crypto.randomUUID(), ucode, 'productcard', payload, scope],
+          sql: `INSERT OR REPLACE INTO state (id, ucode, type, title, payload, scope, userid) VALUES (?, ?, 'section', ?, ?, ?, ?)`,
+          args: [crypto.randomUUID(), ucode, 'productcard', payload, scope, userId || null],
         });
       }
     }
   }
 
   /** Write CMS pages */
-  private async writePages(scope: string, pages: Record<string, { title: string; content: string }>) {
+  private async writePages(scope: string, pages: Record<string, { title: string; content: string }>, userId?: string) {
     for (const [slug, page] of Object.entries(pages)) {
       const ucode = `page:${slug}`;
       const payload = JSON.stringify({ slug, content: page.content, seoTitle: page.title });
@@ -1418,8 +1418,8 @@ Example: if user says "change tagline", output: {"tagline":"new tagline"}`;
         });
       } else {
         await this.statesDb.execute({
-          sql: `INSERT OR REPLACE INTO state (id, ucode, type, title, payload, scope) VALUES (?, ?, 'page', ?, ?, ?)`,
-          args: [crypto.randomUUID(), ucode, page.title, payload, scope],
+          sql: `INSERT OR REPLACE INTO state (id, ucode, type, title, payload, scope, userid) VALUES (?, ?, 'page', ?, ?, ?, ?)`,
+          args: [crypto.randomUUID(), ucode, page.title, payload, scope, userId || null],
         });
       }
     }

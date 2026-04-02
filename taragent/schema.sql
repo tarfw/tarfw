@@ -9,7 +9,8 @@ CREATE TABLE IF NOT EXISTS state (
   payload TEXT,
   embedding BLOB,
   scope TEXT,
-  author TEXT,
+  userid TEXT,
+  public INTEGER DEFAULT 0,
   ts TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -59,3 +60,4 @@ CREATE INDEX IF NOT EXISTS idx_events_stream_ts ON events(streamid, ts);
 CREATE INDEX IF NOT EXISTS idx_events_scope ON events(scope);
 CREATE INDEX IF NOT EXISTS idx_instance_stateid ON instance(stateid);
 CREATE INDEX IF NOT EXISTS idx_state_ucode ON state(ucode);
+CREATE INDEX IF NOT EXISTS idx_state_public ON state(public, type);

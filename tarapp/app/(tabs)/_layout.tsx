@@ -136,6 +136,7 @@ export default function TabLayout() {
         >
           <Tabs.Screen name="index" options={{ title: 'Workspace' }} />
           <Tabs.Screen name="memories" options={{ title: 'Memories' }} />
+          <Tabs.Screen name="discover" options={{ title: 'Discover' }} />
           <Tabs.Screen name="agents" options={{ title: 'Agents' }} />
         </Tabs>
       </View>

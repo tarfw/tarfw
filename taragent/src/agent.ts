@@ -109,14 +109,16 @@ If the user wants to design or update their storefront, use the design tools.`,
           title: z.string().optional(),
           payload: z.record(z.string(), z.any()).optional(),
           scope: scopeParam(),
+          userid: z.string().optional().describe("User ID of the creator"),
+          public: z.boolean().optional().describe("Whether this state is publicly discoverable"),
         }),
-        execute: async ({ ucode, title, payload, scope }) => {
+        execute: async ({ ucode, title, payload, scope, userid, public: isPublic }) => {
           const db = this.statesDb();
           const [type] = ucode.split(":");
           const id = crypto.randomUUID();
           await db.execute({
-            sql: "INSERT INTO state (id, ucode, type, title, payload, scope) VALUES (?, ?, ?, ?, ?, ?)",
-            args: [id, ucode, type || "unknown", title || null, JSON.stringify(payload || {}), scope],
+            sql: "INSERT INTO state (id, ucode, type, title, payload, scope, userid, public) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            args: [id, ucode, type || "unknown", title || null, JSON.stringify(payload || {}), scope, userid || null, isPublic ? 1 : 0],
           });
           return { success: true, id, ucode, title, scope };
         },
@@ -159,7 +161,7 @@ If the user wants to design or update their storefront, use the design tools.`,
         execute: async ({ ucode, scope }) => {
           const db = this.statesDb();
           const result = await db.execute({
-            sql: "SELECT id, ucode, type, title, payload, scope, created_at FROM state WHERE ucode = ? AND scope = ?",
+            sql: "SELECT id, ucode, type, title, payload, scope, userid, public, ts FROM state WHERE ucode = ? AND scope = ?",
             args: [ucode, scope],
           });
           return result.rows.length > 0 ? result.rows[0] : { error: "Not found" };
@@ -175,9 +177,28 @@ If the user wants to design or update their storefront, use the design tools.`,
         }),
         execute: async ({ scope, type, limit }) => {
           const db = this.statesDb();
-          let sql = "SELECT id, ucode, type, title, payload, scope FROM state WHERE scope = ?";
+          let sql = "SELECT id, ucode, type, title, payload, scope, userid, public FROM state WHERE scope = ?";
           const args: any[] = [scope];
           if (type) { sql += " AND type = ?"; args.push(type); }
+          sql += " ORDER BY ts DESC LIMIT ?";
+          args.push(limit);
+          return (await db.execute({ sql, args })).rows;
+        },
+      }),
+
+      listPublicStates: tool({
+        description: "List public state records across all scopes, optionally filtered by type",
+        inputSchema: z.object({
+          type: z.string().optional(),
+          q: z.string().optional().describe("Search query to filter by title"),
+          limit: z.number().default(50),
+        }),
+        execute: async ({ type, q, limit }) => {
+          const db = this.statesDb();
+          let sql = "SELECT id, ucode, type, title, payload, scope, userid, ts FROM state WHERE public = 1";
+          const args: any[] = [];
+          if (type) { sql += " AND type = ?"; args.push(type); }
+          if (q) { sql += " AND title LIKE ?"; args.push(`%${q}%`); }
           sql += " ORDER BY ts DESC LIMIT ?";
           args.push(limit);
           return (await db.execute({ sql, args })).rows;
@@ -487,14 +508,14 @@ If the user wants to design or update their storefront, use the design tools.`,
   // ─── @callable() methods for REST compat ───
 
   @callable()
-  async callCreateState(args: { ucode: string; title?: string; payload?: Record<string, any>; scope?: string }) {
+  async callCreateState(args: { ucode: string; title?: string; payload?: Record<string, any>; scope?: string; userid?: string; public?: boolean }) {
     const db = this.statesDb();
     const [type] = args.ucode.split(":");
     const id = crypto.randomUUID();
     const scope = args.scope || DEFAULT_SCOPE;
     await db.execute({
-      sql: "INSERT INTO state (id, ucode, type, title, payload, scope) VALUES (?, ?, ?, ?, ?, ?)",
-      args: [id, args.ucode, type || "unknown", args.title || null, JSON.stringify(args.payload || {}), scope],
+      sql: "INSERT INTO state (id, ucode, type, title, payload, scope, userid, public) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      args: [id, args.ucode, type || "unknown", args.title || null, JSON.stringify(args.payload || {}), scope, args.userid || null, args.public ? 1 : 0],
     });
     return { success: true, result: { id, ucode: args.ucode, title: args.title, scope } };
   }
@@ -514,7 +535,7 @@ If the user wants to design or update their storefront, use the design tools.`,
   async callGetStates(args: { scope?: string; type?: string; limit?: number }) {
     const db = this.statesDb();
     const scope = args.scope || DEFAULT_SCOPE;
-    let sql = "SELECT id, ucode, type, title, payload, scope FROM state WHERE scope = ?";
+    let sql = "SELECT id, ucode, type, title, payload, scope, userid, public FROM state WHERE scope = ?";
     const sqlArgs: any[] = [scope];
     if (args.type) { sql += " AND type = ?"; sqlArgs.push(args.type); }
     sql += " ORDER BY ts DESC LIMIT ?";

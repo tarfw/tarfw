@@ -10,6 +10,8 @@ declare namespace Cloudflare {
     AUTH_DB_TOKEN: string;
     // AI
     GROQ_API_KEY: string;
+    // Auth
+    GOOGLE_CLIENT_ID: string;
     // Durable Objects
     TarAgent: DurableObjectNamespace<import("./src/agent").TarAgent>;
     EVENT_HUB: DurableObjectNamespace<import("./src/do/eventhub").EventHub>;
