@@ -20,7 +20,7 @@ import { useKeyboard } from '@/hooks/useKeyboard';
 import { useAgentState } from '@/hooks/useAgentState';
 import { generateEmbedding } from '@/src/lib/embeddings';
 import { searchStates, getAllStates } from '@/src/db/turso';
-import { createScopeApi } from '@/src/api/client';
+
 
 interface Suggestion {
   text: string;
@@ -67,7 +67,7 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
         const queryVector = await generateEmbedding(debouncedQuery);
         
         // Step 2: Search local Turso database for similar states
-        const searchResults = await searchStates(queryVector, 'shop:main', 5);
+        const searchResults = await searchStates(queryVector, activeScope || 'shop:main', 5);
         
         // Step 3: Generate suggestions from search results
         const aiSuggestions: Suggestion[] = [];
@@ -231,7 +231,7 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
         const body: any = {
           channel: 'app_agent',
           userId: 'mobile_user_01',
-          scope: (isSitesMode && activeScope) ? activeScope : 'shop:main',
+          scope: activeScope || 'shop:main',
           text: suggestion.text,
         };
         if (action) body.action = action;
@@ -272,7 +272,7 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
       const body: any = {
         channel: 'app_agent',
         userId: 'mobile_user_01',
-        scope: (isSitesMode && activeScope) ? activeScope : 'shop:main',
+        scope: activeScope || 'shop:main',
         text: query,
       };
       if (action) body.action = action;

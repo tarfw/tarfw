@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from "react";
 import { createStateLocal, updateStateLocal, deleteStateLocal, getAllStates, searchStates, upsertEmbedding, getStateIdByUcode, getStatesWithoutEmbeddings, getInstancesByState, createInstance, updateInstance, deleteInstance, Instance } from "../src/db/turso";
 import { generateEmbedding } from "../src/lib/embeddings";
 import { listStatesApi } from "../src/api/client";
+import { useAuth } from "./useAuth";
 
 type AgentState = {
   loading: boolean;
@@ -62,9 +63,8 @@ const AgentContext = createContext<AgentState>({
   setQuery: () => {},
 });
 
-const DEFAULT_SCOPE = "shop:main";
-
 export function AgentProvider({ children }: { children: React.ReactNode }) {
+  const { scopes } = useAuth();
   const [loading, setLoadingRaw] = useState(false);
   const [result, setResultRaw] = useState<any>(null);
   const [isPickerVisible, setPickerVisible] = useState(false);
@@ -72,6 +72,15 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   const [isMemoryStateVisible, setMemoryStateVisible] = useState(false);
   const [selectedMemoryState, setSelectedMemoryState] = useState<string | null>(null);
   const [activeScope, setActiveScope] = useState<string | null>(null);
+
+  // Set initial scope from auth scopes when they become available
+  useEffect(() => {
+    if (!activeScope && scopes && scopes.length > 0) {
+      // Pick the first non-main scope, or fall back to the first scope
+      const firstStore = scopes.find(s => s !== 'shop:main') || scopes[0];
+      if (firstStore) setActiveScope(firstStore);
+    }
+  }, [scopes]);
   const [query, setQuery] = useState('');
   const setLoading = (v: boolean) => { console.log('[AGENT STATE] setLoading:', v); setLoadingRaw(v); };
   const setResult = (v: any) => { 
@@ -84,7 +93,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   const searchCounterRef = React.useRef(0);
 
   const loadStates = async () => {
-    const currentScope = activeScope || DEFAULT_SCOPE;
+    const currentScope = activeScope || 'shop:main';
     searchCounterRef.current++; // Invalidate any pending searches
     try {
       // API-only: fetch states from remote, no local sync
@@ -103,7 +112,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   }, [activeScope]);
 
   const createState = async (ucode: string, title: string, payload: any) => {
-    const currentScope = activeScope || DEFAULT_SCOPE;
+    const currentScope = activeScope || 'shop:main';
     setLoading(true);
     try {
       const id = await createStateLocal(ucode, title, payload, currentScope);
@@ -122,7 +131,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   };
 
   const updateState = async (ucode: string, title: string, payload: any) => {
-    const currentScope = activeScope || DEFAULT_SCOPE;
+    const currentScope = activeScope || 'shop:main';
     setLoading(true);
     try {
       await updateStateLocal(ucode, title, payload, currentScope);
@@ -143,7 +152,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   };
 
   const deleteState = async (ucode: string) => {
-    const currentScope = activeScope || DEFAULT_SCOPE;
+    const currentScope = activeScope || 'shop:main';
     setLoading(true);
     try {
       await deleteStateLocal(ucode, currentScope);
@@ -155,7 +164,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
 
   const reindexMissingEmbeddings = async () => {
     try {
-      const missing = await getStatesWithoutEmbeddings(DEFAULT_SCOPE);
+      const missing = await getStatesWithoutEmbeddings(activeScope || 'shop:main');
 
       if (missing.length === 0) return;
 
@@ -190,7 +199,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const currentScope = activeScope || DEFAULT_SCOPE;
+    const currentScope = activeScope || 'shop:main';
     setLoading(true);
     try {
       const vector = await generateEmbedding(trimmedQuery);
@@ -213,7 +222,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
 
   // Instance methods for working state under products/services
   const loadInstances = async (stateid: string): Promise<Instance[]> => {
-    const currentScope = activeScope || DEFAULT_SCOPE;
+    const currentScope = activeScope || 'shop:main';
     try {
       return await getInstancesByState(stateid, currentScope);
     } catch (e) {
@@ -223,7 +232,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   };
 
   const addInstance = async (data: { stateid: string; qty?: number; value?: number; currency?: string; available?: boolean; type?: string }) => {
-    const currentScope = activeScope || DEFAULT_SCOPE;
+    const currentScope = activeScope || 'shop:main';
     setLoading(true);
     try {
       await createInstance({ ...data, scope: currentScope });
@@ -263,7 +272,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
 
   // Fetch states from remote for instance creation flow
   const fetchStatesFromRemote = async (type?: string): Promise<any[]> => {
-    const currentScope = activeScope || DEFAULT_SCOPE;
+    const currentScope = activeScope || 'shop:main';
     try {
       const response = await listStatesApi(currentScope, type, 50);
       return response.result || [];

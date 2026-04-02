@@ -15,8 +15,7 @@ export interface AuthSession {
   expires_at: string;
 }
 
-// ─── Default scopes for new users ───
-const DEFAULT_SCOPES = ['shop:main'];
+// ─── No hardcoded default — each new user gets a unique store scope ───
 
 // ─── Get auth DB from env ───
 export function authDb(env: Env): Client {
@@ -77,13 +76,12 @@ export async function upsertGoogleUser(db: Client, googleUser: { sub: string; em
     args: [userId, googleUser.sub, googleUser.email, googleUser.name || null, googleUser.picture || null],
   });
 
-  // Default scopes
-  for (const scope of DEFAULT_SCOPES) {
-    await db.execute({
-      sql: "INSERT OR IGNORE INTO user_scopes (user_id, scope, role) VALUES (?, ?, 'owner')",
-      args: [userId, scope],
-    });
-  }
+  // Create a unique default store for new user
+  const storeId = crypto.randomUUID();
+  await db.execute({
+    sql: "INSERT OR IGNORE INTO user_scopes (user_id, scope, role) VALUES (?, ?, 'owner')",
+    args: [userId, `shop:${storeId}`],
+  });
 
   return { id: userId, google_id: googleUser.sub, email: googleUser.email, name: googleUser.name || null, picture: googleUser.picture || null };
 }
@@ -132,6 +130,11 @@ export async function deleteSession(db: Client, token: string): Promise<void> {
 export async function getUserScopes(db: Client, userId: string): Promise<string[]> {
   const result = await db.execute({ sql: 'SELECT scope FROM user_scopes WHERE user_id = ?', args: [userId] });
   return result.rows.map((r) => r.scope as string);
+}
+
+export async function getUserScopesWithRoles(db: Client, userId: string): Promise<{ scope: string; role: string }[]> {
+  const result = await db.execute({ sql: 'SELECT scope, role FROM user_scopes WHERE user_id = ?', args: [userId] });
+  return result.rows.map((r) => ({ scope: r.scope as string, role: (r.role as string) || 'owner' }));
 }
 
 export async function addScopeToUser(db: Client, userId: string, scope: string, role = 'owner'): Promise<void> {

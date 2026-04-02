@@ -41,7 +41,8 @@ function parseCloudEvent(ev: any): LiveEvent {
   };
 }
 
-export function useLiveEvents() {
+export function useLiveEvents(scope?: string | null) {
+  const activeScope = scope || 'shop:main';
   const [events, setEvents] = useState<LiveEvent[]>([]);
   const [status, setStatus] = useState('Connecting...');
   const wsRef = useRef<WebSocket | null>(null);
@@ -78,7 +79,7 @@ export function useLiveEvents() {
 
   const loadCloudEvents = useCallback(async () => {
     try {
-      const result = await getCloudEventsApi('shop:main', 50);
+      const result = await getCloudEventsApi(activeScope, 50);
       if (result?.success && result?.result?.length > 0) {
         const cloudEvents = result.result.map(parseCloudEvent)
           .sort((a: LiveEvent, b: LiveEvent) => (b.rawTimestamp || '').localeCompare(a.rawTimestamp || ''))
@@ -90,7 +91,7 @@ export function useLiveEvents() {
     } catch (e) {
       console.error('[useLiveEvents] Cloud events error:', e);
     }
-  }, []);
+  }, [activeScope]);
 
   // ─── WebSocket ───
 
@@ -100,11 +101,12 @@ export function useLiveEvents() {
       wsRef.current = null;
     }
 
-    let wsUrl = `${WS_URL}/shop:main`;
+    let wsUrl = WS_URL;
     try {
       const token = await getAuthToken();
-      if (token) wsUrl += `?token=${encodeURIComponent(token)}`;
-    } catch (e) {}
+      if (!token) { setStatus('No auth token'); return; }
+      wsUrl += `?token=${encodeURIComponent(token)}`;
+    } catch (e) { setStatus('Auth error'); return; }
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
@@ -160,6 +162,7 @@ export function useLiveEvents() {
 
   useEffect(() => {
     mountedRef.current = true;
+    setEvents([]); // Clear events when scope changes
     loadCloudEvents();
     connectWs();
 
@@ -182,7 +185,7 @@ export function useLiveEvents() {
         wsRef.current = null;
       }
     };
-  }, []);
+  }, [activeScope, loadCloudEvents, connectWs]);
 
   return { events, status };
 }

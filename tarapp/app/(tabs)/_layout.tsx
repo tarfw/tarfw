@@ -2,6 +2,7 @@ import { Tabs } from 'expo-router';
 import React, { useState } from 'react';
 import { View, Text } from 'react-native';
 import { CustomTabBar } from '@/components/CustomTabBar';
+import { StoreSwitcher } from '@/components/StoreSwitcher';
 import { AgentProvider, useAgentState } from '@/hooks/useAgentState';
 import { AddMemories } from '@/components/addmemories';
 import { SearchMemories } from '@/components/searchmemories';
@@ -9,6 +10,7 @@ import { CrudMemories } from '@/components/crudmemories';
 import { MemoryStateModal } from '@/components/MemoryStateModal';
 import { InstanceFormModal } from '@/components/InstanceFormModal';
 import { StateTypeDef } from '@/src/config/stateSchemas';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: string | null }> {
   constructor(props: any) {
@@ -110,19 +112,33 @@ function GlobalModals() {
   );
 }
 
+function StoreHeader() {
+  const { activeScope, setActiveScope } = useAgentState();
+  const insets = useSafeAreaInsets();
+
+  return (
+    <View style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 8, backgroundColor: '#FFF' }}>
+      <StoreSwitcher activeScope={activeScope} onSwitch={setActiveScope} />
+    </View>
+  );
+}
+
 export default function TabLayout() {
   return (
     <AgentProvider>
-      <Tabs
-        tabBar={(props) => <CustomTabBar {...props} />}
-        screenOptions={{
-          headerShown: false,
-        }}
-      >
-        <Tabs.Screen name="index" options={{ title: 'Workspace' }} />
-        <Tabs.Screen name="memories" options={{ title: 'Memories' }} />
-        <Tabs.Screen name="agents" options={{ title: 'Agents' }} />
-      </Tabs>
+      <View style={{ flex: 1, backgroundColor: '#FFF' }}>
+        <StoreHeader />
+        <Tabs
+          tabBar={(props) => <CustomTabBar {...props} />}
+          screenOptions={{
+            headerShown: false,
+          }}
+        >
+          <Tabs.Screen name="index" options={{ title: 'Workspace' }} />
+          <Tabs.Screen name="memories" options={{ title: 'Memories' }} />
+          <Tabs.Screen name="agents" options={{ title: 'Agents' }} />
+        </Tabs>
+      </View>
       <ErrorBoundary>
         <GlobalModals />
       </ErrorBoundary>

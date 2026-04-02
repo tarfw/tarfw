@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useMemo, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, Animated } from 'react-native';
 import { useLiveEvents, LiveEvent } from '@/hooks/useLiveEvents';
+import { useAgentState } from '@/hooks/useAgentState';
 
 // ─── Full TAR Opcode map for Workspace screen ─────────────────────────────
 
@@ -123,7 +124,8 @@ function groupByStreamId(events: LiveEvent[]): EventCard[] {
 // ─── Screen ───────────────────────────────────────────────────────────────
 
 export default function Workspace() {
-  const { events: cloudEvents, status } = useLiveEvents();
+  const { activeScope } = useAgentState();
+  const { events: cloudEvents, status } = useLiveEvents(activeScope);
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
 

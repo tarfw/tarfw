@@ -19,8 +19,8 @@
         "class_name": "TarAgent"
       },
       {
-        "name": "ORDER_DO",
-        "class_name": "OrderDO"
+        "name": "EVENT_HUB",
+        "class_name": "EventHub"
       }
     ]
   },
@@ -37,6 +37,10 @@
     {
       "tag": "v3",
       "deleted_classes": ["SessionDO"]
+    },
+    {
+      "tag": "v4",
+      "renamed_classes": [{ "from": "OrderDO", "to": "EventHub" }]
     }
   ]
 }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,6 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useAgentState } from '@/hooks/useAgentState';
 import { getStateType } from '../config/stateSchemas';
-import { listScopesApi } from '../api/client';
 
 // ─── TAR Opcode Metadata ───────────────────────────────────────────────────
 
@@ -84,152 +83,10 @@ function getOpcodeMeta(opcode: number) {
   return OPCODE_META[opcode] ?? { name: `OPCODE_${opcode}`, color: '#8E8E93', icon: 'flash', family: 'Unknown' };
 }
 
-// ─── Inline Store Pill (replaces title in header when store mode is on) ──────
-
-function StorePill({ activeScope, onChangeScope, onExit }: {
-  activeScope: string | null;
-  onChangeScope: (scope: string) => void;
-  onExit: () => void;
-}) {
-  const [scopes, setScopes] = useState<{ scope: string; role: string }[]>([]);
-  const [showPicker, setShowPicker] = useState(false);
-
-  const slug = activeScope ? activeScope.replace('shop:', '') : null;
-  const storeScopes = scopes.filter((s) => s && s.scope && s.scope !== 'shop:main');
-
-  useEffect(() => {
-    listScopesApi()
-      .then((res) => setScopes(res.scopes || []))
-      .catch(() => {});
-  }, [activeScope]);
-
-  return (
-    <View>
-      {/* Pill in the header */}
-      <View style={selectorStyles.pillRow}>
-        {slug ? (
-          <TouchableOpacity
-            style={selectorStyles.scopePill}
-            onPress={() => setShowPicker(!showPicker)}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="storefront-outline" size={14} color="#FF2D55" />
-            <Text style={selectorStyles.scopeText}>{slug}</Text>
-            <Ionicons name={showPicker ? 'chevron-up' : 'chevron-down'} size={12} color="#8E8E93" />
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            style={selectorStyles.scopePillMuted}
-            onPress={() => setShowPicker(!showPicker)}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="storefront-outline" size={14} color="#8E8E93" />
-            <Text style={selectorStyles.scopeTextMuted}>No store</Text>
-            <Ionicons name={showPicker ? 'chevron-up' : 'chevron-down'} size={12} color="#8E8E93" />
-          </TouchableOpacity>
-        )}
-
-        {slug && (
-          <TouchableOpacity
-            onPress={() => Linking.openURL(`https://${slug}.tarai.space/`)}
-            hitSlop={8}
-            style={{ marginLeft: 8 }}
-          >
-            <Ionicons name="open-outline" size={18} color="#007AFF" />
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* Scope picker dropdown */}
-      {showPicker && storeScopes.length > 0 && (
-        <View style={selectorStyles.picker}>
-          {storeScopes.map((s) => {
-            const sSlug = s.scope.replace('shop:', '');
-            const isActive = s.scope === activeScope;
-            return (
-              <TouchableOpacity
-                key={s.scope}
-                style={[selectorStyles.pickerItem, isActive && { backgroundColor: '#FFF0F3' }]}
-                onPress={() => { onChangeScope(s.scope); setShowPicker(false); }}
-              >
-                <Text style={[selectorStyles.pickerText, isActive && { color: '#FF2D55' }]}>
-                  {sSlug}
-                </Text>
-                <Text style={selectorStyles.pickerRole}>{s.role}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      )}
-    </View>
-  );
-}
-
-const selectorStyles = StyleSheet.create({
-  pillRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  scopePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#FFF0F3',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  scopePillMuted: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#F2F2F7',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  scopeText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FF2D55',
-  },
-  scopeTextMuted: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#8E8E93',
-  },
-  picker: {
-    marginTop: 10,
-    backgroundColor: '#F9F9F9',
-    borderRadius: 12,
-    padding: 4,
-  },
-  pickerItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-  },
-  pickerText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#1C1C1E',
-    flex: 1,
-  },
-  pickerRole: {
-    fontSize: 11,
-    color: '#8E8E93',
-    textTransform: 'uppercase',
-    fontWeight: '600',
-  },
-});
-
 // ─── Screen ───────────────────────────────────────────────────────────────
 
 export default function AgentsScreen() {
-  const { loading, result, activeScope, setActiveScope, selectedMemoryState, setQuery } = useAgentState();
+  const { loading, result, activeScope, selectedMemoryState, setQuery } = useAgentState();
   const isSitesMode = selectedMemoryState === 'sites';
   console.log('[AGENTS SCREEN] render — loading:', loading, 'isSitesMode:', isSitesMode, 'activeScope:', activeScope, 'result:', !!result);
 
@@ -339,24 +196,16 @@ export default function AgentsScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.headerRow}>
-          {isSitesMode ? (
-            <StorePill
-              activeScope={activeScope}
-              onChangeScope={setActiveScope}
-              onExit={() => { setActiveScope(null); }}
-            />
-          ) : (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-              <Text style={styles.headerTitle}>Agents</Text>
-              {selectedMemoryState && (
-                <View style={{ backgroundColor: '#F2F2F7', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
-                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#8E8E93', textTransform: 'capitalize' }}>
-                    {selectedMemoryState}
-                  </Text>
-                </View>
-              )}
-            </View>
-          )}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <Text style={styles.headerTitle}>Agents</Text>
+            {selectedMemoryState && (
+              <View style={{ backgroundColor: '#F2F2F7', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }}>
+                <Text style={{ fontSize: 13, fontWeight: '600', color: '#8E8E93', textTransform: 'capitalize' }}>
+                  {selectedMemoryState}
+                </Text>
+              </View>
+            )}
+          </View>
         </View>
 
         {!result && !loading && !isSitesMode && (

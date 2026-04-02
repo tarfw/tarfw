@@ -8,6 +8,7 @@ import {
   restoreSession,
   getAuthToken,
 } from '../src/auth/googleSignIn';
+import { listScopesApi } from '../src/api/client';
 
 interface AuthContextValue extends AuthState {
   signIn: () => Promise<void>;
@@ -40,6 +41,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       const savedSession = await restoreSession();
       if (savedSession) {
+        // Fetch scopes from API since restoreSession doesn't persist them
+        try {
+          const res = await listScopesApi();
+          savedSession.scopes = (res.scopes || []).map(s => s.scope);
+        } catch {
+          // Continue without scopes - will be empty
+        }
         setAuthState(savedSession);
       } else {
         setAuthState(prev => ({ ...prev, isLoading: false }));

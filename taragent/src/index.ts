@@ -3,11 +3,11 @@ import { getStatesDbClient, getInstancesDbClient } from "./db/client";
 import { InterpreterAgent } from "./agents/interpreter";
 import { SearchAgent } from "./agents/search";
 import { DesignAgent } from "./agents/design";
-import { authDb, verifyGoogleToken, upsertGoogleUser, createSession, validateSession, deleteSession, getUserScopes, addScopeToUser, authenticateRequest } from "./auth";
+import { authDb, verifyGoogleToken, upsertGoogleUser, createSession, validateSession, deleteSession, getUserScopes, getUserScopesWithRoles, addScopeToUser, authenticateRequest } from "./auth";
 
 // Re-export Durable Objects for Wrangler binding
 export { TarAgent } from "./agent";
-export { OrderDO } from "./do/order";
+export { EventHub } from "./do/eventhub";
 
 // ─── CORS helper ───
 function corsHeaders(headers: Record<string, string> = {}): Record<string, string> {
@@ -29,6 +29,12 @@ function jsonResponse(data: any, status = 200): Response {
 function getTarAgentStub(env: Env, scope: string = "default") {
   const id = env.TarAgent.idFromName(scope);
   return env.TarAgent.get(id);
+}
+
+// ─── EventHub helper (per-user) ───
+function getEventHubStub(env: Env, userId: string) {
+  const id = env.EVENT_HUB.idFromName(userId);
+  return env.EVENT_HUB.get(id);
 }
 
 export default {
@@ -72,7 +78,8 @@ export default {
     if (path === "/api/auth/scopes" && request.method === "GET") {
       const auth = await authenticateRequest(env, request);
       if (auth instanceof Response) return new Response(auth.body, { status: auth.status, headers: corsHeaders() });
-      return jsonResponse({ success: true, scopes: auth.scopes });
+      const scopesWithRoles = await getUserScopesWithRoles(authDb(env), auth.user_id);
+      return jsonResponse({ success: true, scopes: scopesWithRoles });
     }
     if (path === "/api/auth/scopes" && request.method === "POST") {
       const auth = await authenticateRequest(env, request);
@@ -83,24 +90,23 @@ export default {
       return jsonResponse({ success: true, scope: body.scope }, 201);
     }
 
-    // ─── WebSocket proxy to OrderDO ───
-    if (path.startsWith("/api/ws/")) {
-      const scope = path.split("/api/ws/")[1];
+    // ─── WebSocket proxy to EventHub (per-user) ───
+    if (path.startsWith("/api/ws")) {
       const upgradeHeader = request.headers.get("Upgrade");
       if (!upgradeHeader || upgradeHeader.toLowerCase() !== "websocket") {
         return new Response("Expected WebSocket Upgrade", { status: 426 });
       }
       const token = url.searchParams.get("token");
-      const id = env.ORDER_DO.idFromName(scope);
-      const stub = env.ORDER_DO.get(id);
-      if (token) {
-        const newUrl = new URL(request.url);
-        newUrl.searchParams.delete("token");
-        return stub.fetch(new Request(newUrl.toString(), {
-          headers: { ...Object.fromEntries(request.headers), Authorization: `Bearer ${token}` },
-        }));
-      }
-      return stub.fetch(request);
+      if (!token) return jsonResponse({ error: "token required" }, 401);
+      const db = authDb(env);
+      const validation = await validateSession(db, token);
+      if (!validation.valid || !validation.user_id) return jsonResponse({ error: "Invalid token" }, 401);
+      const stub = getEventHubStub(env, validation.user_id);
+      const newUrl = new URL(request.url);
+      newUrl.searchParams.delete("token");
+      return stub.fetch(new Request(newUrl.toString(), {
+        headers: { ...Object.fromEntries(request.headers), Authorization: `Bearer ${token}` },
+      }));
     }
 
     // ─── REST compat: State CRUD → TarAgent @callable() ───
@@ -255,44 +261,48 @@ export default {
       }
     }
 
-    // ─── REST compat: Events ───
+    // ─── REST compat: Events (per-user EventHub) ───
     if (path === "/api/event" && request.method === "POST") {
+      const auth = await authenticateRequest(env, request);
+      if (auth instanceof Response) return new Response(auth.body, { status: auth.status, headers: corsHeaders() });
       const body = await request.json() as any;
-      const scope = body.scope || "shop:main";
-      const id = env.ORDER_DO.idFromName(scope);
-      const stub = env.ORDER_DO.get(id);
+      const scope = body.scope || auth.scopes[0] || "";
+      const stub = getEventHubStub(env, auth.user_id);
       const event = { opcode: body.opcode, streamid: body.streamid, delta: body.delta || 0, payload: body.payload || {}, scope, timestamp: new Date().toISOString() };
       const response = await stub.fetch(new Request(`http://localhost/api/events?scope=${scope}`, { method: "POST", body: JSON.stringify(event) }));
       const result = await response.json();
       return jsonResponse({ success: true, result: { emitted: true, event, scope, ...(result as object) } }, 201);
     }
     if (path.startsWith("/api/events/") && request.method === "GET") {
+      const auth = await authenticateRequest(env, request);
+      if (auth instanceof Response) return new Response(auth.body, { status: auth.status, headers: corsHeaders() });
       const scope = path.split("/api/events/")[1];
       const limit = parseInt(url.searchParams.get("limit") || "50");
-      const id = env.ORDER_DO.idFromName(scope);
-      const stub = env.ORDER_DO.get(id);
+      const stub = getEventHubStub(env, auth.user_id);
       const response = await stub.fetch(new Request(`http://localhost/api/events?limit=${limit}&scope=${scope}`));
       if (!response.ok) return jsonResponse({ error: "DO error" }, 500);
       const events = await response.json();
       return jsonResponse({ success: true, result: events });
     }
     if (path.startsWith("/api/events/") && request.method === "DELETE") {
+      const auth = await authenticateRequest(env, request);
+      if (auth instanceof Response) return new Response(auth.body, { status: auth.status, headers: corsHeaders() });
       const scope = path.split("/api/events/")[1];
       const eventId = url.searchParams.get("id");
       if (!eventId) return jsonResponse({ error: "Event ID required" }, 400);
-      const id = env.ORDER_DO.idFromName(scope);
-      const stub = env.ORDER_DO.get(id);
+      const stub = getEventHubStub(env, auth.user_id);
       const response = await stub.fetch(new Request(`http://localhost/api/events?id=${eventId}&scope=${scope}`, { method: "DELETE" }));
       const result = await response.json();
       return jsonResponse({ success: true, result });
     }
     if (path.startsWith("/api/events/") && request.method === "PUT") {
+      const auth = await authenticateRequest(env, request);
+      if (auth instanceof Response) return new Response(auth.body, { status: auth.status, headers: corsHeaders() });
       const scope = path.split("/api/events/")[1];
       const eventId = url.searchParams.get("id");
       if (!eventId) return jsonResponse({ error: "Event ID required" }, 400);
       const body = await request.json();
-      const id = env.ORDER_DO.idFromName(scope);
-      const stub = env.ORDER_DO.get(id);
+      const stub = getEventHubStub(env, auth.user_id);
       const response = await stub.fetch(new Request(`http://localhost/api/events?id=${eventId}&scope=${scope}`, { method: "PUT", body: JSON.stringify(body) }));
       const result = await response.json();
       return jsonResponse({ success: true, result });
@@ -300,10 +310,11 @@ export default {
 
     // ─── REST compat: Design ───
     if (path.startsWith("/api/design/history/") && request.method === "GET") {
+      const auth = await authenticateRequest(env, request);
+      if (auth instanceof Response) return new Response(auth.body, { status: auth.status, headers: corsHeaders() });
       const scope = path.split("/api/design/history/")[1];
       const limit = parseInt(url.searchParams.get("limit") || "10");
-      const id = env.ORDER_DO.idFromName(scope);
-      const stub = env.ORDER_DO.get(id);
+      const stub = getEventHubStub(env, auth.user_id);
       const response = await stub.fetch(new Request(`http://localhost/api/events?limit=100&scope=${scope}`));
       if (!response.ok) return jsonResponse({ error: "Failed to fetch events" }, 500);
       const allEvents: any[] = await response.json();
@@ -314,12 +325,13 @@ export default {
       return jsonResponse({ success: true, result: snapshots });
     }
     if (path.startsWith("/api/design/revert/") && request.method === "POST") {
+      const auth = await authenticateRequest(env, request);
+      if (auth instanceof Response) return new Response(auth.body, { status: auth.status, headers: corsHeaders() });
       const scope = path.split("/api/design/revert/")[1];
       const body = await request.json() as any;
       if (!body.eventId) return jsonResponse({ error: "eventId is required" }, 400);
-      const doId = env.ORDER_DO.idFromName(scope);
-      const doStub = env.ORDER_DO.get(doId);
-      const response = await doStub.fetch(new Request(`http://localhost/api/events?limit=100&scope=${scope}`));
+      const stub = getEventHubStub(env, auth.user_id);
+      const response = await stub.fetch(new Request(`http://localhost/api/events?limit=100&scope=${scope}`));
       if (!response.ok) return jsonResponse({ error: "Failed to fetch events" }, 500);
       const allEvents: any[] = await response.json();
       const snapshot = allEvents.find((e: any) => e.id === body.eventId && e.opcode === 813 && e.payload?.storeConfig);
