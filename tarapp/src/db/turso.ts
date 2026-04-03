@@ -302,7 +302,7 @@ export async function createInstance(data: {
   try {
     const db = await getInstancesDb();
     
-    // Insert locally first
+    // Insert locally - Turso sync-react-native will automatically sync to remote
     await db.run(
       `INSERT INTO instance (id, stateid, type, scope, qty, value, currency, available, lat, lng, h3, startts, endts, ts, payload)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -325,26 +325,11 @@ export async function createInstance(data: {
       ]
     );
     
-    // Sync to remote in background
+    // Push sync to remote - Turso sync will handle remote automatically
     try {
-      await createInstanceApi({
-        id,
-        stateid: data.stateid,
-        type: data.type || 'inventory',
-        scope,
-        qty: data.qty,
-        value: data.value,
-        currency: data.currency || 'INR',
-        available: data.available ?? true,
-        lat: data.lat,
-        lng: data.lng,
-        h3: data.h3,
-        startts: data.startts,
-        endts: data.endts,
-        payload: data.payload,
-      });
+      await db.push();
     } catch (syncErr: any) {
-      // Continue even if remote sync fails - local is saved
+      // Continue even if sync fails - local is saved
     }
     
     return { success: true, id, local: true };

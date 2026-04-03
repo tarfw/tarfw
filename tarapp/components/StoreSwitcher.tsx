@@ -17,12 +17,13 @@ interface StoreSwitcherProps {
 
 export function StoreSwitcher({ activeScope, onSwitch }: StoreSwitcherProps) {
   const [scopes, setScopes] = useState<{ scope: string; role: string }[]>([]);
-  const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [loading, setLoading] = useState(false);
 
   const slug = activeScope ? activeScope.replace('shop:', '') : null;
+  const storeScopes = scopes.filter(s => s && s.scope && s.scope !== 'shop:main');
+
 
   const fetchScopes = useCallback(async () => {
     try {
@@ -54,58 +55,29 @@ export function StoreSwitcher({ activeScope, onSwitch }: StoreSwitcherProps) {
     }
   };
 
-  if (!open) {
-    return (
-      <TouchableOpacity
-        style={slug ? styles.pill : styles.pillMuted}
-        onPress={() => setOpen(true)}
-        activeOpacity={0.7}
-      >
-        <Ionicons
-          name="storefront-outline"
-          size={14}
-          color={slug ? '#FF2D55' : '#8E8E93'}
-        />
-        <Text style={slug ? styles.pillText : styles.pillTextMuted}>
-          {slug || 'No store'}
-        </Text>
-        <Ionicons name="chevron-down" size={12} color="#8E8E93" />
-      </TouchableOpacity>
-    );
-  }
-
-  const storeScopes = scopes.filter(s => s && s.scope && s.scope !== 'shop:main');
-
   return (
-    <View style={styles.dropdown}>
-      {/* Header row */}
-      <View style={styles.headerRow}>
-        <Text style={styles.headerLabel}>Stores</Text>
-        <TouchableOpacity onPress={() => { setOpen(false); setCreating(false); }} hitSlop={8}>
-          <Ionicons name="close" size={18} color="#8E8E93" />
-        </TouchableOpacity>
-      </View>
+    <View style={styles.container}>
+      <Text style={styles.sectionTitle}>STORES</Text>
 
-      {/* Scope list */}
       {storeScopes.map(s => {
         const sSlug = (s.scope || '').replace('shop:', '');
         const isActive = s.scope === activeScope;
         return (
           <TouchableOpacity
             key={s.scope}
-            style={[styles.item, isActive && styles.itemActive]}
-            onPress={() => { onSwitch(s.scope); setOpen(false); }}
+            style={styles.modalRow}
+            onPress={() => { onSwitch(s.scope); }}
+            activeOpacity={0.5}
           >
             <Ionicons
               name="storefront-outline"
-              size={16}
-              color={isActive ? '#FF2D55' : '#1C1C1E'}
+              size={22}
+              color={isActive ? '#FF2D55' : '#8E8E93'}
             />
-            <Text style={[styles.itemText, isActive && styles.itemTextActive]}>
+            <Text style={styles.modalLabel}>
               {sSlug}
             </Text>
-            <Text style={styles.roleBadge}>{s.role}</Text>
-            {isActive && <Ionicons name="checkmark" size={16} color="#FF2D55" />}
+            {isActive && <Ionicons name="checkmark" size={20} color="#FF2D55" />}
           </TouchableOpacity>
         );
       })}
@@ -114,7 +86,6 @@ export function StoreSwitcher({ activeScope, onSwitch }: StoreSwitcherProps) {
         <Text style={styles.emptyText}>No stores yet</Text>
       )}
 
-      {/* Create new store */}
       {creating ? (
         <View style={styles.createRow}>
           <TextInput
@@ -141,91 +112,44 @@ export function StoreSwitcher({ activeScope, onSwitch }: StoreSwitcherProps) {
         </View>
       ) : (
         <TouchableOpacity
-          style={styles.newStoreBtn}
+          style={styles.modalRow}
           onPress={() => setCreating(true)}
+          activeOpacity={0.5}
         >
-          <Ionicons name="add" size={16} color="#007AFF" />
-          <Text style={styles.newStoreBtnText}>New Store</Text>
+          <Ionicons name="add-circle-outline" size={22} color="#007AFF" />
+          <Text style={[styles.modalLabel, { color: '#007AFF' }]}>New Store</Text>
         </TouchableOpacity>
       )}
+      <View style={styles.modalSep} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  pill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#FFF0F3',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+  container: {
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 10,
   },
-  pillMuted: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#F2F2F7',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  pillText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#FF2D55',
-  },
-  pillTextMuted: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#8E8E93',
-  },
-  dropdown: {
-    backgroundColor: '#F9F9F9',
-    borderRadius: 14,
-    padding: 8,
-    gap: 2,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-  },
-  headerLabel: {
+  sectionTitle: {
     fontSize: 13,
     fontWeight: '700',
     color: '#8E8E93',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+    marginBottom: 10,
   },
-  item: {
+  modalRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 10,
-    borderRadius: 10,
+    paddingVertical: 16,
   },
-  itemActive: {
-    backgroundColor: '#FFF0F3',
-  },
-  itemText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#1C1C1E',
+  modalLabel: {
     flex: 1,
-  },
-  itemTextActive: {
-    color: '#FF2D55',
-  },
-  roleBadge: {
-    fontSize: 11,
-    color: '#8E8E93',
-    textTransform: 'uppercase',
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: '500',
+    color: '#1C1C1E',
+    marginLeft: 14,
   },
   emptyText: {
     fontSize: 14,
@@ -236,40 +160,30 @@ const styles = StyleSheet.create({
   createRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+    gap: 12,
+    paddingVertical: 10,
   },
   createInput: {
     flex: 1,
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: '500',
     color: '#1C1C1E',
-    backgroundColor: '#FFF',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#E5E5EA',
+    backgroundColor: '#F2F2F7',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
   },
   createBtn: {
-    width: 32,
-    height: 32,
+    width: 40,
+    height: 40,
     backgroundColor: '#007AFF',
-    borderRadius: 16,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  newStoreBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 10,
-  },
-  newStoreBtnText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#007AFF',
+  modalSep: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#F0F0F0',
+    marginTop: 16,
   },
 });
