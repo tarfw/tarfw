@@ -24,15 +24,21 @@ import { StoreSwitcher } from './StoreSwitcher';
 import { InstancesModal } from './InstancesModal';
 import { AddProductModal } from './AddProductModal';
 import { ProductsListModal } from './ProductsListModal';
+import TokensScreen from '@/app/tokens';
+import ChannelsScreen from '@/app/channels';
+import ProfileScreen from '@/app/profile';
 export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
   const { visible: keyboardVisible, height: keyboardHeight } = useKeyboard();
-  const { setPickerVisible, setSearchVisible, isMemoryStateVisible, setMemoryStateVisible, selectedMemoryState, setSelectedMemoryState, activeScope, setActiveScope } = useAgentState();
+  const { setSearchVisible, isMemoryStateVisible, setMemoryStateVisible, selectedMemoryState, setSelectedMemoryState, activeScope, setActiveScope } = useAgentState();
   const isSitesMode = selectedMemoryState === 'sites';
   
   const [activeModalTitle, setActiveModalTitle] = useState<string | null>(null);
   const [addProductVisible, setAddProductVisible] = useState(false);
   const [productsListVisible, setProductsListVisible] = useState(false);
+  const [tokenStatsVisible, setTokenStatsVisible] = useState(false);
+  const [channelsVisible, setChannelsVisible] = useState(false);
+  const [profileVisible, setProfileVisible] = useState(false);
 
   const renderIcon = (routeName: string, focused: boolean) => {
     const color = focused ? '#000' : '#ACACAC';
@@ -55,7 +61,10 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
     { type: 'products', label: 'Products', icon: 'pricetag-outline', color: '#FF9500' },
     { type: 'sale', label: 'Sales', icon: 'cash-outline', color: '#AF52DE' },
     { type: 'pages', label: 'Pages', icon: 'document-text-outline', color: '#FF3B30' },
-    { type: 'collection', label: 'Collections', icon: 'layers-outline', color: '#5856D6' }
+    { type: 'collection', label: 'Collections', icon: 'layers-outline', color: '#5856D6' },
+    { type: 'tokens', label: 'Tokens', icon: 'server-outline', color: '#FF9500' },
+    { type: 'channels', label: 'Channels', icon: 'paper-plane-outline', color: '#0088cc' },
+    { type: 'profile', label: 'Profile', icon: 'person-outline', color: '#8E8E93' }
   ];
 
   return (
@@ -135,6 +144,72 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
               </ScrollView>
             )}
 
+            {selectedMemoryState === 'channels' && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.suggestionCardsScroll}
+                style={styles.suggestionCardsContainer}
+              >
+                <TouchableOpacity
+                  style={styles.suggestionCard}
+                  onPress={() => {
+                    if (process.env.EXPO_OS === 'ios') {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    }
+                    setChannelsVisible(true);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.suggestionCardText}>Channels</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            )}
+
+            {selectedMemoryState === 'profile' && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.suggestionCardsScroll}
+                style={styles.suggestionCardsContainer}
+              >
+                <TouchableOpacity
+                  style={styles.suggestionCard}
+                  onPress={() => {
+                    if (process.env.EXPO_OS === 'ios') {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    }
+                    setProfileVisible(true);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.suggestionCardText}>Profile</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            )}
+
+            {selectedMemoryState === 'tokens' && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.suggestionCardsScroll}
+                style={styles.suggestionCardsContainer}
+              >
+                <TouchableOpacity
+                  style={styles.suggestionCard}
+                  onPress={() => {
+                    if (process.env.EXPO_OS === 'ios') {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    }
+                    setTokenStatsVisible(true);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.suggestionCardText}>Token Stats</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            )}
+
             {/* FLOATING ACTION CLUSTER */}
             <View style={[styles.toggleCluster, { alignSelf: 'flex-end', backgroundColor: '#FFF', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(0,0,0,0.08)' }]}>
               <TouchableOpacity
@@ -148,18 +223,6 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
                 style={[styles.toggleTab, { backgroundColor: 'rgba(0,0,0,0.05)' }]}
               >
                 <Ionicons name="search" size={20} color="#8E8E93" />
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => {
-                  if (process.env.EXPO_OS === 'ios') {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  }
-                  setPickerVisible(true);
-                }}
-                activeOpacity={0.7}
-                style={[styles.toggleTab, { backgroundColor: 'rgba(0,0,0,0.05)' }]}
-              >
-                <Ionicons name="arrow-up" size={20} color="#8E8E93" />
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => {
@@ -308,6 +371,42 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
         visible={productsListVisible}
         onClose={() => setProductsListVisible(false)}
       />
+
+      <Modal animationType="slide" visible={tokenStatsVisible} onRequestClose={() => setTokenStatsVisible(false)}>
+        <View style={{ flex: 1, backgroundColor: '#FFF' }}>
+          <View style={[styles.modalHeader, { paddingTop: Math.max(insets.top, 16) }]}>
+            <Text style={styles.modalTitle}>Token Stats</Text>
+            <TouchableOpacity onPress={() => setTokenStatsVisible(false)} hitSlop={8}>
+              <Ionicons name="close" size={22} color="#999" />
+            </TouchableOpacity>
+          </View>
+          <TokensScreen />
+        </View>
+      </Modal>
+
+      <Modal animationType="slide" visible={channelsVisible} onRequestClose={() => setChannelsVisible(false)}>
+        <View style={{ flex: 1, backgroundColor: '#FFF' }}>
+          <View style={[styles.modalHeader, { paddingTop: Math.max(insets.top, 16) }]}>
+            <Text style={styles.modalTitle}>Channels</Text>
+            <TouchableOpacity onPress={() => setChannelsVisible(false)} hitSlop={8}>
+              <Ionicons name="close" size={22} color="#999" />
+            </TouchableOpacity>
+          </View>
+          <ChannelsScreen />
+        </View>
+      </Modal>
+
+      <Modal animationType="slide" visible={profileVisible} onRequestClose={() => setProfileVisible(false)}>
+        <View style={{ flex: 1, backgroundColor: '#FFF' }}>
+          <View style={[styles.modalHeader, { paddingTop: Math.max(insets.top, 16) }]}>
+            <Text style={styles.modalTitle}>Profile</Text>
+            <TouchableOpacity onPress={() => setProfileVisible(false)} hitSlop={8}>
+              <Ionicons name="close" size={22} color="#999" />
+            </TouchableOpacity>
+          </View>
+          <ProfileScreen />
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }

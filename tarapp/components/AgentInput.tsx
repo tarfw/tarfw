@@ -73,8 +73,6 @@ export function AgentInput() {
           } else if (typeKey === 'task') {
             aiSuggestions.push({ text: `do ${title}`, action: `start task ${title}`, type: 'command', ucode, title });
             aiSuggestions.push({ text: `show task ${title}`, action: `show task ${title}`, type: 'info', ucode, title });
-          } else if (typeKey === 'order') {
-            aiSuggestions.push({ text: `track order ${title}`, action: `track ${title}`, type: 'info', ucode, title });
           }
         }
 
@@ -106,11 +104,11 @@ export function AgentInput() {
     const lower = text.toLowerCase();
     const suggestions: Suggestion[] = [];
     const patterns = [
-      { prefix: 'search ', type: 'search' as const, examples: ['products', 'orders', 'customers', 'memories'] },
+      { prefix: 'search ', type: 'search' as const, examples: ['products', 'customers', 'memories'] },
       { prefix: 'find ', type: 'search' as const, examples: ['shoes', 'coffee', 'available items'] },
-      { prefix: 'create ', type: 'create' as const, examples: ['product', 'order', 'task', 'category'] },
+      { prefix: 'create ', type: 'create' as const, examples: ['product', 'task', 'category'] },
       { prefix: 'add ', type: 'create' as const, examples: ['new product', 'item to cart', 'customer'] },
-      { prefix: 'show ', type: 'info' as const, examples: ['my orders', 'inventory', 'stats'] },
+      { prefix: 'show ', type: 'info' as const, examples: ['inventory', 'stats'] },
       { prefix: 'buy ', type: 'command' as const, examples: ['2 coffees', 'shoes size 9'] },
       { prefix: 'sell ', type: 'command' as const, examples: ['10 items', 'product'] },
     ];
@@ -125,8 +123,8 @@ export function AgentInput() {
 
     if (suggestions.length === 0) {
       const starters = [
-        'search products', 'find coffee', 'create product', 'show my orders',
-        'sell 2 shoes', 'add to cart', 'show inventory', 'create task',
+        'search products', 'find coffee', 'create product', 'show inventory',
+        'sell 2 shoes', 'add to cart', 'create task',
       ];
       const matched = starters
         .filter(s => s.startsWith(lower) || lower.length < 3)

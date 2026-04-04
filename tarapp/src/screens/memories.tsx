@@ -19,7 +19,6 @@ export default function MemoriesScreen() {
     addInstance,
     editInstance,
     removeInstance,
-    setPickerVisible,
   } = useAgentState();
   const insets = useSafeAreaInsets();
 
@@ -97,11 +96,6 @@ export default function MemoriesScreen() {
       setInstancesLoading(false);
       setIsFirstLoad(false);
     }
-  };
-
-  const handleAddInstance = () => {
-    // Use the global picker modal from _layout
-    setPickerVisible(true);
   };
 
   const handleEditInstance = (instance: Instance) => {

@@ -19,9 +19,7 @@ type AgentState = {
   editInstance: (id: string, data: Partial<Instance>) => Promise<void>;
   removeInstance: (id: string) => Promise<void>;
   fetchStatesFromRemote: (type?: string) => Promise<any[]>;
-  // Global picker state
-  isPickerVisible: boolean;
-  setPickerVisible: (v: boolean) => void;
+  // Global modal state
   isSearchVisible: boolean;
   setSearchVisible: (v: boolean) => void;
   isMemoryStateVisible: boolean;
@@ -49,8 +47,6 @@ const AgentContext = createContext<AgentState>({
   editInstance: async () => {},
   removeInstance: async () => {},
   fetchStatesFromRemote: async () => [],
-  isPickerVisible: false,
-  setPickerVisible: () => {},
   isSearchVisible: false,
   setSearchVisible: () => {},
   isMemoryStateVisible: false,
@@ -67,7 +63,6 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   const { scopes } = useAuth();
   const [loading, setLoadingRaw] = useState(false);
   const [result, setResultRaw] = useState<any>(null);
-  const [isPickerVisible, setPickerVisible] = useState(false);
   const [isSearchVisible, setSearchVisible] = useState(false);
   const [isMemoryStateVisible, setMemoryStateVisible] = useState(false);
   const [selectedMemoryState, setSelectedMemoryState] = useState<string | null>(null);
@@ -300,8 +295,6 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
         editInstance,
         removeInstance,
         fetchStatesFromRemote,
-        isPickerVisible,
-        setPickerVisible,
         isSearchVisible,
         setSearchVisible,
         isMemoryStateVisible,
