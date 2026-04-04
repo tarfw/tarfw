@@ -21,11 +21,19 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useKeyboard } from '@/hooks/useKeyboard';
 import { useAgentState } from '@/hooks/useAgentState';
 import { StoreSwitcher } from './StoreSwitcher';
+import { InstancesModal } from './InstancesModal';
+import { AddProductModal } from './AddProductModal';
+import { ProductsListModal } from './ProductsListModal';
 export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
   const { visible: keyboardVisible, height: keyboardHeight } = useKeyboard();
   const { setPickerVisible, setSearchVisible, isMemoryStateVisible, setMemoryStateVisible, selectedMemoryState, setSelectedMemoryState, activeScope, setActiveScope } = useAgentState();
   const isSitesMode = selectedMemoryState === 'sites';
+  
+  const [activeModalTitle, setActiveModalTitle] = useState<string | null>(null);
+  const [addProductVisible, setAddProductVisible] = useState(false);
+  const [productsListVisible, setProductsListVisible] = useState(false);
+
   const renderIcon = (routeName: string, focused: boolean) => {
     const color = focused ? '#000' : '#ACACAC';
     const size = 24;
@@ -68,6 +76,65 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
 
         {!keyboardVisible && (
           <View style={styles.bottomSection}>
+            {selectedMemoryState === 'sale' && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.suggestionCardsScroll}
+                style={styles.suggestionCardsContainer}
+              >
+                {['Tables', 'Quick Sale'].map((card) => (
+                  <TouchableOpacity
+                    key={card}
+                    style={styles.suggestionCard}
+                    onPress={() => {
+                      if (process.env.EXPO_OS === 'ios') {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      }
+                      setActiveModalTitle(card);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.suggestionCardText}>{card}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+
+            {selectedMemoryState === 'products' && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.suggestionCardsScroll}
+                style={styles.suggestionCardsContainer}
+              >
+                <TouchableOpacity
+                  style={styles.suggestionCard}
+                  onPress={() => {
+                    if (process.env.EXPO_OS === 'ios') {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    }
+                    setAddProductVisible(true);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.suggestionCardText}>Add Product</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.suggestionCard}
+                  onPress={() => {
+                    if (process.env.EXPO_OS === 'ios') {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    }
+                    setProductsListVisible(true);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.suggestionCardText}>Products</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            )}
+
             {/* FLOATING ACTION CLUSTER */}
             <View style={[styles.toggleCluster, { alignSelf: 'flex-end', backgroundColor: '#FFF', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(0,0,0,0.08)' }]}>
               <TouchableOpacity
@@ -224,6 +291,23 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
           </ScrollView>
         </View>
       </Modal>
+
+      <InstancesModal
+        visible={activeModalTitle !== null}
+        onClose={() => setActiveModalTitle(null)}
+        title={activeModalTitle || ''}
+        activeScope={activeScope || 'shop:main'}
+      />
+
+      <AddProductModal
+        visible={addProductVisible}
+        onClose={() => setAddProductVisible(false)}
+      />
+
+      <ProductsListModal
+        visible={productsListVisible}
+        onClose={() => setProductsListVisible(false)}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -247,6 +331,27 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'flex-start',
     gap: 8,
+  },
+  suggestionCardsContainer: {
+    width: '100%',
+    marginBottom: 4,
+  },
+  suggestionCardsScroll: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  suggestionCard: {
+    backgroundColor: '#FFF',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(0, 0, 0, 0.08)',
+  },
+  suggestionCardText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1C1C1E',
   },
   selectedMemoryStateContainer: {
     flexDirection: 'row',

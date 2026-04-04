@@ -1,4 +1,6 @@
 import { routeAgentRequest } from "agents";
+import { createGroq } from "@ai-sdk/groq";
+import { generateText } from "ai";
 import { getStatesDbClient, getInstancesDbClient } from "./db/client";
 import { InterpreterAgent } from "./agents/interpreter";
 import { SearchAgent } from "./agents/search";
@@ -266,6 +268,45 @@ export default {
           }
           const result = await designAgent.generateDesign({ text: body.text || "", scope, userId: body.userId });
           return jsonResponse({ success: true, result: { ...result, scope, action: "DESIGN" } });
+        }
+
+        // Route to Product Parser (no events, no instances — just AI structured output)
+        const isProductParse = body.action === "PARSE_PRODUCT" ||
+          body.text?.toLowerCase().startsWith("create product:");
+
+        if (isProductParse) {
+          try {
+            const groq = createGroq({ apiKey: env.GROQ_API_KEY });
+            const { text: responseText } = await generateText({
+              model: groq("llama-3.3-70b-versatile"),
+              system: `You parse product descriptions into structured JSON for a commerce system.
+Return ONLY valid JSON matching this schema:
+{"title":"string","price":number,"currency":"string","brand":"string","sku":"string","sizes":["S","M"],"colors":["Red","Blue"]}
+- title is required, all other fields are optional
+- currency defaults to "INR" if not specified, use "USD" for $, "EUR" for €, "GBP" for £
+- sizes and colors should be arrays of strings
+- sku should be auto-generated if not provided (e.g. "NIKE-SHOES-001")
+- Extract brand from the description if mentioned
+Output ONLY the JSON object. No markdown, no explanation.`,
+              prompt: body.text.replace(/^create product:\s*/i, ''),
+            });
+
+            console.log("[PARSE_PRODUCT] raw AI response:", responseText);
+            const raw = (responseText || "").replace(/```json\n?|\n?```/g, "").trim();
+            const jsonMatch = raw.match(/\{[\s\S]*\}/);
+            const product = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(raw);
+
+            return jsonResponse({
+              success: true,
+              result: { action: "PARSE_PRODUCT", product }
+            });
+          } catch (parseErr: any) {
+            console.error("[PARSE_PRODUCT] Error:", parseErr);
+            return jsonResponse({
+              error: "Failed to parse product",
+              message: parseErr.message,
+            }, 500);
+          }
         }
 
         // NL → Interpreter (direct, with Groq access via env)

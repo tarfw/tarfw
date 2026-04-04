@@ -49,7 +49,7 @@ export async function sendChannelMessage(req: {
   userId: string;
   scope: string;
   text?: string;
-  action?: "SEARCH" | "DESIGN" | "DESIGN_UPDATE";
+  action?: "SEARCH" | "DESIGN" | "DESIGN_UPDATE" | "PARSE_PRODUCT";
 }) {
   const headers = await getAuthHeaders();
   console.log('[sendChannelMessage] URL:', CHANNEL_URL);
