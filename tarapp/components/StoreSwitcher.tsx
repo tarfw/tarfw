@@ -20,6 +20,7 @@ export function StoreSwitcher({ activeScope, onSwitch }: StoreSwitcherProps) {
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [loading, setLoading] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   const slug = activeScope ? activeScope.replace('shop:', '') : null;
   const storeScopes = scopes.filter(s => s && s.scope && s.scope !== 'shop:main');
@@ -59,9 +60,21 @@ export function StoreSwitcher({ activeScope, onSwitch }: StoreSwitcherProps) {
     <View style={styles.container}>
       <Text style={styles.sectionTitle}>STORES</Text>
 
-      {storeScopes.map(s => {
-        const sSlug = (s.scope || '').replace('shop:', '');
-        const isActive = s.scope === activeScope;
+      <TouchableOpacity
+        style={styles.selectorContainer}
+        onPress={() => setExpanded(!expanded)}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="storefront-outline" size={14} color="#FF2D55" />
+        <Text style={styles.selectorText}>{slug || 'Select a store'}</Text>
+        <Ionicons name={expanded ? "chevron-up" : "chevron-down"} size={14} color="#8E8E93" style={{ marginLeft: 4 }} />
+      </TouchableOpacity>
+
+      {expanded && (
+        <View style={styles.expandedList}>
+          {storeScopes.map(s => {
+            const sSlug = (s.scope || '').replace('shop:', '');
+            const isActive = s.scope === activeScope;
         return (
           <TouchableOpacity
             key={s.scope}
@@ -86,39 +99,41 @@ export function StoreSwitcher({ activeScope, onSwitch }: StoreSwitcherProps) {
         <Text style={styles.emptyText}>No stores yet</Text>
       )}
 
-      {creating ? (
-        <View style={styles.createRow}>
-          <TextInput
-            style={styles.createInput}
-            value={newName}
-            onChangeText={setNewName}
-            placeholder="store-name"
-            placeholderTextColor="#C7C7CC"
-            autoFocus
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          <TouchableOpacity
-            style={[styles.createBtn, loading && { opacity: 0.5 }]}
-            onPress={handleCreate}
-            disabled={loading || !newName.trim()}
-          >
-            {loading ? (
-              <ActivityIndicator size="small" color="#FFF" />
-            ) : (
-              <Ionicons name="checkmark" size={16} color="#FFF" />
-            )}
-          </TouchableOpacity>
+          {creating ? (
+            <View style={styles.createRow}>
+              <TextInput
+                style={styles.createInput}
+                value={newName}
+                onChangeText={setNewName}
+                placeholder="store-name"
+                placeholderTextColor="#C7C7CC"
+                autoFocus
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <TouchableOpacity
+                style={[styles.createBtn, loading && { opacity: 0.5 }]}
+                onPress={handleCreate}
+                disabled={loading || !newName.trim()}
+              >
+                {loading ? (
+                  <ActivityIndicator size="small" color="#FFF" />
+                ) : (
+                  <Ionicons name="checkmark" size={16} color="#FFF" />
+                )}
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={styles.modalRow}
+              onPress={() => setCreating(true)}
+              activeOpacity={0.5}
+            >
+              <Ionicons name="add-circle-outline" size={22} color="#007AFF" />
+              <Text style={[styles.modalLabel, { color: '#007AFF' }]}>New Store</Text>
+            </TouchableOpacity>
+          )}
         </View>
-      ) : (
-        <TouchableOpacity
-          style={styles.modalRow}
-          onPress={() => setCreating(true)}
-          activeOpacity={0.5}
-        >
-          <Ionicons name="add-circle-outline" size={22} color="#007AFF" />
-          <Text style={[styles.modalLabel, { color: '#007AFF' }]}>New Store</Text>
-        </TouchableOpacity>
       )}
       <View style={styles.modalSep} />
     </View>
@@ -138,6 +153,26 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 10,
+  },
+  selectorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    gap: 4,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(0, 0, 0, 0.08)',
+    alignSelf: 'flex-start',
+  },
+  selectorText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1C1C1E',
+  },
+  expandedList: {
+    marginTop: 8,
   },
   modalRow: {
     flexDirection: 'row',
