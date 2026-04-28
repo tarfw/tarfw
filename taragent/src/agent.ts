@@ -75,7 +75,7 @@ export class TarAgent extends AIChatAgent<Env> {
     options?: OnChatMessageOptions,
   ) {
     const result = streamText({
-      model: this.groq()("llama-3.3-70b-versatile"),
+      model: this.groq()("openai/gpt-oss-120b"),
       system: `You are TarAgent, the AI assistant for TAR — a Universal Commerce Operating System.
 You help users manage their store: inventory, orders, invoices, tasks, design, analytics, and more.
 You have tools for CRUD on states and instances, event management, storefront design, search, scheduling, and analytics.
@@ -103,7 +103,7 @@ If the user wants to design or update their storefront, use the design tools.`,
     return {
       // ── State CRUD ──
       createState: tool({
-        description: "Create a new state record (product, service, etc.)",
+        description: "Create a new state record (product, service, etc.). For products, also creates a store instance automatically.",
         inputSchema: z.object({
           ucode: z.string().describe("Unique code like 'product:coffee'"),
           title: z.string().optional(),
@@ -116,16 +116,29 @@ If the user wants to design or update their storefront, use the design tools.`,
           const db = this.statesDb();
           const [type] = ucode.split(":");
           const id = crypto.randomUUID();
+          // For products, upsert into universal catalog (scope = creator ownership)
           await db.execute({
-            sql: "INSERT INTO state (id, ucode, type, title, payload, scope, userid, public) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            sql: `INSERT INTO state (id, ucode, type, title, payload, scope, userid, public) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                  ON CONFLICT(ucode) DO UPDATE SET title = COALESCE(excluded.title, title), payload = COALESCE(excluded.payload, payload)`,
             args: [id, ucode, type || "unknown", title || null, JSON.stringify(payload || {}), scope, userid || null, isPublic ? 1 : 0],
           });
+          // Auto-create instance for products
+          if (type === "product") {
+            const idb = this.instancesDb();
+            const iid = crypto.randomUUID();
+            await idb.execute({
+              sql: `INSERT INTO instance (id, stateid, type, scope, qty, value, currency, available, ts)
+                    VALUES (?, ?, 'inventory', ?, ?, ?, ?, 1, ?)
+                    ON CONFLICT DO NOTHING`,
+              args: [iid, ucode, scope, payload?.qty ?? null, payload?.price ?? null, payload?.currency || DEFAULT_CURRENCY, new Date().toISOString()],
+            });
+          }
           return { success: true, id, ucode, title, scope };
         },
       }),
 
       updateState: tool({
-        description: "Update an existing state record",
+        description: "Update an existing state record. For products, updates the universal catalog entry (no scope filter).",
         inputSchema: z.object({
           ucode: z.string(),
           title: z.string().optional(),
@@ -134,48 +147,93 @@ If the user wants to design or update their storefront, use the design tools.`,
         }),
         execute: async ({ ucode, title, payload, scope }) => {
           const db = this.statesDb();
-          await db.execute({
-            sql: "UPDATE state SET title = COALESCE(?, title), payload = COALESCE(?, payload) WHERE ucode = ? AND scope = ?",
-            args: [title || null, payload ? JSON.stringify(payload) : null, ucode, scope],
-          });
+          const [type] = ucode.split(":");
+          if (type === "product") {
+            await db.execute({
+              sql: "UPDATE state SET title = COALESCE(?, title), payload = COALESCE(?, payload) WHERE ucode = ?",
+              args: [title || null, payload ? JSON.stringify(payload) : null, ucode],
+            });
+          } else {
+            await db.execute({
+              sql: "UPDATE state SET title = COALESCE(?, title), payload = COALESCE(?, payload) WHERE ucode = ? AND scope = ?",
+              args: [title || null, payload ? JSON.stringify(payload) : null, ucode, scope],
+            });
+          }
           return { success: true, ucode, updated: true };
         },
       }),
 
       deleteState: tool({
-        description: "Delete a state record by ucode",
+        description: "Delete a state record by ucode. For products, removes the store instance; deletes the product state only if no instances remain.",
         inputSchema: z.object({ ucode: z.string(), scope: scopeParam() }),
         execute: async ({ ucode, scope }) => {
+          const [type] = ucode.split(":");
+          if (type === "product") {
+            const idb = this.instancesDb();
+            await idb.execute({ sql: "DELETE FROM instance WHERE stateid = ? AND scope = ?", args: [ucode, scope] });
+            const remaining = await idb.execute({ sql: "SELECT COUNT(*) as cnt FROM instance WHERE stateid = ?", args: [ucode] });
+            const cnt = (remaining.rows[0] as any).cnt as number;
+            if (cnt === 0) {
+              const db = this.statesDb();
+              await db.execute({ sql: "DELETE FROM state WHERE ucode = ?", args: [ucode] });
+            }
+            return { success: true, ucode, instanceDeleted: true, stateDeleted: cnt === 0 };
+          }
           const db = this.statesDb();
-          await db.execute({
-            sql: "DELETE FROM state WHERE ucode = ? AND scope = ?",
-            args: [ucode, scope],
-          });
+          await db.execute({ sql: "DELETE FROM state WHERE ucode = ? AND scope = ?", args: [ucode, scope] });
           return { success: true, ucode, deleted: true };
         },
       }),
 
       getState: tool({
-        description: "Get a single state record by ucode",
+        description: "Get a single state record by ucode. For products, fetches from universal catalog (no scope filter).",
         inputSchema: z.object({ ucode: z.string(), scope: scopeParam() }),
         execute: async ({ ucode, scope }) => {
           const db = this.statesDb();
-          const result = await db.execute({
-            sql: "SELECT id, ucode, type, title, payload, scope, userid, public, ts FROM state WHERE ucode = ? AND scope = ?",
-            args: [ucode, scope],
-          });
+          const [type] = ucode.split(":");
+          const result = type === "product"
+            ? await db.execute({
+                sql: "SELECT id, ucode, type, title, payload, scope, userid, public, ts FROM state WHERE ucode = ? AND type = 'product'",
+                args: [ucode],
+              })
+            : await db.execute({
+                sql: "SELECT id, ucode, type, title, payload, scope, userid, public, ts FROM state WHERE ucode = ? AND scope = ?",
+                args: [ucode, scope],
+              });
           return result.rows.length > 0 ? result.rows[0] : { error: "Not found" };
         },
       }),
 
       listStates: tool({
-        description: "List state records, optionally filtered by type",
+        description: "List state records, optionally filtered by type. For products, uses instance-first query.",
         inputSchema: z.object({
           scope: scopeParam(),
           type: z.string().optional(),
           limit: z.number().default(50),
         }),
         execute: async ({ scope, type, limit }) => {
+          if (type === "product") {
+            // Instance-first: get product ucodes from instances for this store
+            const idb = this.instancesDb();
+            const instances = await idb.execute({
+              sql: "SELECT stateid, qty, value, currency, available FROM instance WHERE scope = ? ORDER BY ts DESC LIMIT ?",
+              args: [scope, limit],
+            });
+            if (instances.rows.length === 0) return [];
+            const ucodes = instances.rows.map(r => r.stateid as string);
+            const placeholders = ucodes.map(() => "?").join(",");
+            const db = this.statesDb();
+            const states = await db.execute({
+              sql: `SELECT id, ucode, type, title, payload, scope, userid, public FROM state WHERE ucode IN (${placeholders}) AND type = 'product'`,
+              args: ucodes,
+            });
+            // Merge instance data onto states
+            const instanceMap: Record<string, any> = {};
+            for (const r of instances.rows) {
+              instanceMap[r.stateid as string] = { qty: r.qty, value: r.value, currency: r.currency, available: r.available };
+            }
+            return states.rows.map(s => ({ ...s, instance: instanceMap[s.ucode as string] }));
+          }
           const db = this.statesDb();
           let sql = "SELECT id, ucode, type, title, payload, scope, userid, public FROM state WHERE scope = ?";
           const args: any[] = [scope];
@@ -202,6 +260,72 @@ If the user wants to design or update their storefront, use the design tools.`,
           sql += " ORDER BY ts DESC LIMIT ?";
           args.push(limit);
           return (await db.execute({ sql, args })).rows;
+        },
+      }),
+
+      // ── Product-specific tools ──
+      createProduct: tool({
+        description: "Create a product in the universal catalog and add it to a store. Creates both state and instance in one shot.",
+        inputSchema: z.object({
+          ucode: z.string().describe("Product ucode like 'product:coffee'"),
+          title: z.string(),
+          payload: z.record(z.string(), z.any()).optional().describe("Product data: price, currency, description, images, etc."),
+          scope: scopeParam(),
+          qty: z.number().optional(),
+          price: z.number().optional(),
+          currency: z.string().default(DEFAULT_CURRENCY),
+          userid: z.string().optional(),
+          public: z.boolean().optional(),
+        }),
+        execute: async ({ ucode, title, payload, scope, qty, price, currency, userid, public: isPublic }) => {
+          const db = this.statesDb();
+          const id = crypto.randomUUID();
+          const finalPayload = { ...payload, price: price ?? payload?.price, currency };
+          await db.execute({
+            sql: `INSERT INTO state (id, ucode, type, title, payload, scope, userid, public) VALUES (?, ?, 'product', ?, ?, ?, ?, ?)
+                  ON CONFLICT(ucode) DO UPDATE SET title = COALESCE(excluded.title, title), payload = COALESCE(excluded.payload, payload)`,
+            args: [id, ucode, title, JSON.stringify(finalPayload), scope, userid || null, isPublic ? 1 : 0],
+          });
+          const idb = this.instancesDb();
+          const iid = crypto.randomUUID();
+          await idb.execute({
+            sql: `INSERT INTO instance (id, stateid, type, scope, qty, value, currency, available, ts)
+                  SELECT ?, ?, 'inventory', ?, ?, ?, ?, 1, ?
+                  WHERE NOT EXISTS (SELECT 1 FROM instance WHERE stateid = ? AND scope = ?)`,
+            args: [iid, ucode, scope, qty ?? null, price ?? payload?.price ?? null, currency, new Date().toISOString(), ucode, scope],
+          });
+          return { success: true, id, ucode, title, scope, instanceId: iid };
+        },
+      }),
+
+      listStoreProducts: tool({
+        description: "List products carried by a specific store (instance-first query).",
+        inputSchema: z.object({
+          scope: scopeParam(),
+          limit: z.number().default(50),
+        }),
+        execute: async ({ scope, limit }) => {
+          const idb = this.instancesDb();
+          const instances = await idb.execute({
+            sql: "SELECT stateid, qty, value, currency, available FROM instance WHERE scope = ? ORDER BY ts DESC LIMIT ?",
+            args: [scope, limit],
+          });
+          if (instances.rows.length === 0) return [];
+          const ucodes = instances.rows.map(r => r.stateid as string);
+          const placeholders = ucodes.map(() => "?").join(",");
+          const db = this.statesDb();
+          const states = await db.execute({
+            sql: `SELECT ucode, title, payload FROM state WHERE ucode IN (${placeholders}) AND type = 'product'`,
+            args: ucodes,
+          });
+          const stateMap: Record<string, any> = {};
+          for (const s of states.rows) { stateMap[s.ucode as string] = s; }
+          return instances.rows
+            .filter(i => stateMap[i.stateid as string])
+            .map(i => {
+              const s = stateMap[i.stateid as string];
+              return { ucode: s.ucode, title: s.title, payload: s.payload, instance: { qty: i.qty, value: i.value, currency: i.currency, available: i.available } };
+            });
         },
       }),
 
@@ -513,6 +637,24 @@ If the user wants to design or update their storefront, use the design tools.`,
     const [type] = args.ucode.split(":");
     const id = crypto.randomUUID();
     const scope = args.scope || DEFAULT_SCOPE;
+    // For products, upsert into universal catalog
+    if (type === "product") {
+      await db.execute({
+        sql: `INSERT INTO state (id, ucode, type, title, payload, scope, userid, public) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+              ON CONFLICT(ucode) DO UPDATE SET title = COALESCE(excluded.title, title), payload = COALESCE(excluded.payload, payload)`,
+        args: [id, args.ucode, "product", args.title || null, JSON.stringify(args.payload || {}), scope, args.userid || null, args.public ? 1 : 0],
+      });
+      // Auto-create instance for the store
+      const idb = this.instancesDb();
+      const iid = crypto.randomUUID();
+      await idb.execute({
+        sql: `INSERT INTO instance (id, stateid, type, scope, qty, value, currency, available, ts)
+              SELECT ?, ?, 'inventory', ?, ?, ?, ?, 1, ?
+              WHERE NOT EXISTS (SELECT 1 FROM instance WHERE stateid = ? AND scope = ?)`,
+        args: [iid, args.ucode, scope, args.payload?.qty ?? null, args.payload?.price ?? null, args.payload?.currency || DEFAULT_CURRENCY, new Date().toISOString(), args.ucode, scope],
+      });
+      return { success: true, result: { id, ucode: args.ucode, title: args.title, scope, instanceId: iid } };
+    }
     await db.execute({
       sql: "INSERT INTO state (id, ucode, type, title, payload, scope, userid, public) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       args: [id, args.ucode, type || "unknown", args.title || null, JSON.stringify(args.payload || {}), scope, args.userid || null, args.public ? 1 : 0],
@@ -524,22 +666,52 @@ If the user wants to design or update their storefront, use the design tools.`,
   async callUpdateState(args: { ucode: string; title?: string; payload?: Record<string, any>; scope?: string }) {
     const db = this.statesDb();
     const scope = args.scope || DEFAULT_SCOPE;
-    await db.execute({
-      sql: "UPDATE state SET title = COALESCE(?, title), payload = COALESCE(?, payload) WHERE ucode = ? AND scope = ?",
-      args: [args.title || null, args.payload ? JSON.stringify(args.payload) : null, args.ucode, scope],
-    });
+    const [type] = args.ucode.split(":");
+    if (type === "product") {
+      await db.execute({
+        sql: "UPDATE state SET title = COALESCE(?, title), payload = COALESCE(?, payload) WHERE ucode = ?",
+        args: [args.title || null, args.payload ? JSON.stringify(args.payload) : null, args.ucode],
+      });
+    } else {
+      await db.execute({
+        sql: "UPDATE state SET title = COALESCE(?, title), payload = COALESCE(?, payload) WHERE ucode = ? AND scope = ?",
+        args: [args.title || null, args.payload ? JSON.stringify(args.payload) : null, args.ucode, scope],
+      });
+    }
     return { success: true, result: { ucode: args.ucode, updated: true } };
   }
 
   @callable()
   async callGetStates(args: { scope?: string; type?: string; limit?: number }) {
-    const db = this.statesDb();
     const scope = args.scope || DEFAULT_SCOPE;
+    const limit = args.limit || 50;
+    // Instance-first for products
+    if (args.type === "product") {
+      const idb = this.instancesDb();
+      const instances = await idb.execute({
+        sql: "SELECT stateid, qty, value, currency, available FROM instance WHERE scope = ? ORDER BY ts DESC LIMIT ?",
+        args: [scope, limit],
+      });
+      if (instances.rows.length === 0) return { success: true, result: [] };
+      const ucodes = instances.rows.map(r => r.stateid as string);
+      const placeholders = ucodes.map(() => "?").join(",");
+      const db = this.statesDb();
+      const states = await db.execute({
+        sql: `SELECT id, ucode, type, title, payload, scope, userid, public FROM state WHERE ucode IN (${placeholders}) AND type = 'product'`,
+        args: ucodes,
+      });
+      const instanceMap: Record<string, any> = {};
+      for (const r of instances.rows) {
+        instanceMap[r.stateid as string] = { qty: r.qty, value: r.value, currency: r.currency, available: r.available };
+      }
+      return { success: true, result: states.rows.map(s => ({ ...s, instance: instanceMap[s.ucode as string] })) };
+    }
+    const db = this.statesDb();
     let sql = "SELECT id, ucode, type, title, payload, scope, userid, public FROM state WHERE scope = ?";
     const sqlArgs: any[] = [scope];
     if (args.type) { sql += " AND type = ?"; sqlArgs.push(args.type); }
     sql += " ORDER BY ts DESC LIMIT ?";
-    sqlArgs.push(args.limit || 50);
+    sqlArgs.push(limit);
     return { success: true, result: (await db.execute({ sql, args: sqlArgs })).rows };
   }
 

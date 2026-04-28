@@ -16,7 +16,7 @@ import {
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
-import { Ionicons, Feather, FontAwesome5 } from '@expo/vector-icons';
+import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useKeyboard } from '@/hooks/useKeyboard';
 import { useAgentState } from '@/hooks/useAgentState';
@@ -30,7 +30,7 @@ import ProfileScreen from '@/app/profile';
 export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
   const { visible: keyboardVisible, height: keyboardHeight } = useKeyboard();
-  const { setSearchVisible, isMemoryStateVisible, setMemoryStateVisible, selectedMemoryState, setSelectedMemoryState, activeScope, setActiveScope } = useAgentState();
+  const { setSearchVisible, isMemoryStateVisible, setMemoryStateVisible, selectedMemoryState, setSelectedMemoryState, activeScope, setActiveScope, setQuery } = useAgentState();
   const isSitesMode = selectedMemoryState === 'sites';
   
   const [activeModalTitle, setActiveModalTitle] = useState<string | null>(null);
@@ -40,30 +40,16 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
   const [channelsVisible, setChannelsVisible] = useState(false);
   const [profileVisible, setProfileVisible] = useState(false);
 
-  const renderIcon = (routeName: string, focused: boolean) => {
-    const color = focused ? '#000' : '#ACACAC';
-    const size = 24;
-    switch (routeName) {
-      case 'index':
-        return <Feather name="circle" size={size} color={color} />;
-      case 'memories':
-        return <Ionicons name="cube-outline" size={size} color={color} />;
-      case 'discover':
-        return <Ionicons name="globe-outline" size={size} color={color} />;
-      default:
-        return null;
-    }
-  };
-
   const MEMORY_STATE_TYPES = [
-    { type: 'sites', label: 'Sites', icon: 'globe-outline', color: '#007AFF' },
+    { type: 'storefront', label: 'Storefront', icon: 'storefront-outline', color: '#FF2D55' },
+    { type: 'sites', label: 'Pages', icon: 'globe-outline', color: '#007AFF' },
     { type: 'inventory', label: 'Inventory', icon: 'cube-outline', color: '#34C759' },
     { type: 'products', label: 'Products', icon: 'pricetag-outline', color: '#FF9500' },
     { type: 'sale', label: 'Sales', icon: 'cash-outline', color: '#AF52DE' },
-    { type: 'pages', label: 'Pages', icon: 'document-text-outline', color: '#FF3B30' },
     { type: 'collection', label: 'Collections', icon: 'layers-outline', color: '#5856D6' },
     { type: 'tokens', label: 'Tokens', icon: 'server-outline', color: '#FF9500' },
     { type: 'channels', label: 'Channels', icon: 'paper-plane-outline', color: '#0088cc' },
+    { type: 'peoples', label: 'Peoples', icon: 'people-outline', color: '#FF2D55' },
     { type: 'profile', label: 'Profile', icon: 'person-outline', color: '#8E8E93' }
   ];
 
@@ -78,13 +64,49 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
         { 
           paddingBottom: keyboardVisible 
             ? (Platform.OS === 'android' ? keyboardHeight + 20 : 0) 
-            : Math.max(insets.bottom, 8) 
+            : Math.max(insets.bottom, 8) + 12 
         },
       ]}>
 
 
         {!keyboardVisible && (
           <View style={styles.bottomSection}>
+            {selectedMemoryState === 'storefront' && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.suggestionCardsScroll}
+                style={styles.suggestionCardsContainer}
+              >
+                <TouchableOpacity
+                  style={styles.suggestionCard}
+                  onPress={() => {
+                    if (process.env.EXPO_OS === 'ios') {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    }
+                    navigation.navigate('aiagents');
+                    setQuery("Create storefront ");
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.suggestionCardText}>Create Site</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.suggestionCard}
+                  onPress={() => {
+                    if (process.env.EXPO_OS === 'ios') {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    }
+                    navigation.navigate('aiagents');
+                    setQuery("Edit storefront ");
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.suggestionCardText}>Sites</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            )}
+
             {selectedMemoryState === 'sale' && (
               <ScrollView
                 horizontal
@@ -210,82 +232,42 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
               </ScrollView>
             )}
 
-            {/* FLOATING ACTION CLUSTER */}
-            <View style={[styles.toggleCluster, { alignSelf: 'flex-end', backgroundColor: '#FFF', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(0,0,0,0.08)' }]}>
-              <TouchableOpacity
-                onPress={() => {
-                  if (process.env.EXPO_OS === 'ios') {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  }
-                  setSearchVisible(true);
-                }}
-                activeOpacity={0.7}
-                style={[styles.toggleTab, { backgroundColor: 'rgba(0,0,0,0.05)' }]}
-              >
-                <Ionicons name="search" size={20} color="#8E8E93" />
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => {
-                  if (process.env.EXPO_OS === 'ios') {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  }
-                  navigation.navigate('aiagents');
-                }}
-                activeOpacity={0.7}
-                style={[styles.toggleTab, { backgroundColor: 'rgba(0,0,0,0.05)' }]}
-              >
-                <Text style={{ fontWeight: '800', fontSize: 16, color: '#000' }}>AI</Text>
-              </TouchableOpacity>
-            </View>
-
             <BlurView intensity={80} tint="light" style={styles.barContainer}>
             <View style={styles.tabRow}>
-              {/* LEFT SECTION: Toggle cluster for Workspace, Memories & Discover */}
+              {/* LEFT SECTION: Workspace tab + Search + AI */}
               <View style={styles.leftSection}>
                 <View style={styles.toggleCluster}>
-                  {state.routes.filter(r => r.name !== 'agents').map((route) => {
-                    const index = state.routes.indexOf(route);
-                    const isFocused = state.index === index;
-                    const onPress = () => {
+                  <TouchableOpacity
+                    onPress={() => {
                       if (process.env.EXPO_OS === 'ios') {
                         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                       }
-                      const event = navigation.emit({
-                        type: 'tabPress',
-                        target: route.key,
-                        canPreventDefault: true,
-                      });
-                      if (!isFocused && !event.defaultPrevented) {
-                        navigation.navigate(route.name);
+                      setSearchVisible(true);
+                    }}
+                    activeOpacity={0.7}
+                    style={styles.toggleTab}
+                  >
+                    <Ionicons name="search" size={20} color="#8E8E93" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => {
+                      if (process.env.EXPO_OS === 'ios') {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                       }
-                    };
-
-                    return (
-                      <TouchableOpacity
-                        key={route.key}
-                        onPress={onPress}
-                        activeOpacity={0.7}
-                        style={[
-                          styles.toggleTab,
-                          isFocused && styles.toggleTabActive,
-                        ]}
-                      >
-                        {renderIcon(route.name, isFocused)}
-                      </TouchableOpacity>
-                    );
-                  })}
+                      navigation.navigate('aiagents');
+                    }}
+                    activeOpacity={0.7}
+                    style={styles.toggleTab}
+                  >
+                    <Text style={{ fontWeight: '800', fontSize: 16, color: '#000' }}>AI</Text>
+                  </TouchableOpacity>
                 </View>
-              </View>
-
-              {/* CENTER SECTION: No Square */}
-              <View style={styles.centerSection}>
-
               </View>
 
               {/* RIGHT SECTION: Memory State Selector in Bar */}
               <View style={styles.rightSection}>
                 <TouchableOpacity
-                  style={[styles.selectedMemoryStateContainer, { borderWidth: 0, paddingVertical: 4, backgroundColor: 'transparent' }]}
+                  style={[styles.selectedMemoryStateContainer, { borderWidth: 0, paddingVertical: 8, paddingHorizontal: 16, backgroundColor: '#FFF', borderRadius: 14 }]}
                   onPress={() => {
                     if (process.env.EXPO_OS === 'ios') {
                       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -295,22 +277,21 @@ export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarPro
                 >
                   {selectedMemoryState ? (
                     <>
-                      <Ionicons 
-                        name={MEMORY_STATE_TYPES.find(t => t.type === selectedMemoryState)?.icon as any} 
-                        size={14} 
-                        color={MEMORY_STATE_TYPES.find(t => t.type === selectedMemoryState)?.color} 
+                      <Ionicons
+                        name={MEMORY_STATE_TYPES.find(t => t.type === selectedMemoryState)?.icon as any}
+                        size={20}
+                        color={MEMORY_STATE_TYPES.find(t => t.type === selectedMemoryState)?.color}
                       />
-                      <Text style={styles.selectedMemoryStateText}>
+                      <Text style={[styles.selectedMemoryStateText, { fontSize: 15 }]}>
                         {MEMORY_STATE_TYPES.find(t => t.type === selectedMemoryState)?.label}
                       </Text>
                     </>
                   ) : (
                     <>
-                      <FontAwesome5 name="asterisk" size={12} color="#8E8E93" />
-                      <Text style={styles.selectedMemoryStateText}>Memory</Text>
+                      <FontAwesome5 name="asterisk" size={16} color="#8E8E93" />
+                      <Text style={[styles.selectedMemoryStateText, { fontSize: 15 }]}>Memory</Text>
                     </>
                   )}
-                  <Ionicons name="chevron-down" size={14} color="#8E8E93" style={{ marginLeft: 4 }} />
                 </TouchableOpacity>
               </View>
             </View>

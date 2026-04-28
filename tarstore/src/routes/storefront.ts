@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { Bindings, Variables, StoreData, DesignNode } from '../lib/types';
 import { getStatesDb, getInstancesDb } from '../db/client';
 import {
-  getProducts, getProductByUcode, getCategories, getSections,
+  getProductByUcode, getCategories, getSections,
   getPageBySlug, getProductsWithInstances, getInstanceForProduct,
 } from '../db/queries';
 import { buildPage, renderDesignTree } from '../lib/renderer';
@@ -171,13 +171,17 @@ store.get('/product/:ucode', async (c) => {
   const statesDb = getStatesDb(c.env.STATES_DB_URL, c.env.STATES_DB_TOKEN);
   const instancesDb = getInstancesDb(c.env.INSTANCES_DB_URL, c.env.INSTANCES_DB_TOKEN);
 
-  const product = await getProductByUcode(statesDb, ucode, scope);
+  const product = await getProductByUcode(statesDb, ucode);
   if (!product) {
     return c.html(wrapPage(storeConfig, 'Not Found', notFoundPage(storeConfig, slug, cart)), 404);
   }
 
   const instance = await getInstanceForProduct(instancesDb, ucode, scope);
-  product.instance = instance || { qty: null, value: product.payload?.price || null, currency: 'INR', available: true };
+  if (!instance) {
+    // Product exists but this store doesn't carry it
+    return c.html(wrapPage(storeConfig, 'Not Found', notFoundPage(storeConfig, slug, cart)), 404);
+  }
+  product.instance = instance;
 
   const bodyHtml = productDetailPage(storeConfig, product, slug, cart);
   return withCache(c.html(wrapPage(storeConfig, product.title || ucode, bodyHtml + cartScript(slug))), CACHE_PRODUCT_DETAIL);

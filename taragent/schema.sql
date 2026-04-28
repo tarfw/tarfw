@@ -61,3 +61,4 @@ CREATE INDEX IF NOT EXISTS idx_events_scope ON events(scope);
 CREATE INDEX IF NOT EXISTS idx_instance_stateid ON instance(stateid);
 CREATE INDEX IF NOT EXISTS idx_state_ucode ON state(ucode);
 CREATE INDEX IF NOT EXISTS idx_state_public ON state(public, type);
+CREATE INDEX IF NOT EXISTS idx_instance_scope_type ON instance(scope, type);

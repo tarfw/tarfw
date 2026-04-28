@@ -235,7 +235,7 @@ export class InterpreterAgent {
       try {
         const groq = createGroq({ apiKey: this.env.GROQ_API_KEY });
         const { text: responseText } = await generateText({
-          model: groq("llama-3.3-70b-versatile"),
+          model: groq("openai/gpt-oss-120b"),
           system: "You are a JSON-only API. Output ONLY valid JSON. No markdown, no explanation, no code blocks.",
           prompt: this.buildIntentPrompt(text),
         });

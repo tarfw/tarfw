@@ -87,7 +87,7 @@ function getOpcodeMeta(opcode: number) {
 
 export default function AgentsScreen() {
   const { loading, result, activeScope, selectedMemoryState, setQuery } = useAgentState();
-  const isSitesMode = selectedMemoryState === 'sites';
+  const isSitesMode = selectedMemoryState === 'sites' || selectedMemoryState === 'storefront';
   console.log('[AGENTS SCREEN] render — loading:', loading, 'isSitesMode:', isSitesMode, 'activeScope:', activeScope, 'result:', !!result);
 
   const renderResults = () => {
@@ -217,24 +217,36 @@ export default function AgentsScreen() {
 
         {!result && !loading && isSitesMode && (
           <View style={styles.empty}>
-            <Ionicons name="globe-outline" size={40} color="#FF2D55" />
-            <Text style={styles.emptyText}>Create your site</Text>
-            <Text style={styles.emptySub}>The AI conversation asks for site name and site description to create a site.</Text>
+            <Ionicons 
+              name={selectedMemoryState === 'storefront' ? 'storefront-outline' : 'globe-outline'} 
+              size={40} 
+              color="#FF2D55" 
+            />
+            <Text style={styles.emptyText}>
+              {selectedMemoryState === 'storefront' ? 'Create your storefront' : 'Create your site'}
+            </Text>
+            <Text style={styles.emptySub}>
+              The AI conversation asks for {selectedMemoryState === 'storefront' ? 'storefront' : 'site'} name and description to create it.
+            </Text>
             
             <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
               <TouchableOpacity
                 style={styles.suggestionPill}
                 activeOpacity={0.7}
-                onPress={() => setQuery("Create site ")}
+                onPress={() => setQuery(selectedMemoryState === 'storefront' ? "Create storefront " : "Create site ")}
               >
-                <Text style={styles.suggestionPillText}>Create site</Text>
+                <Text style={styles.suggestionPillText}>
+                  {selectedMemoryState === 'storefront' ? 'Create storefront' : 'Create site'}
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.suggestionPill}
                 activeOpacity={0.7}
-                onPress={() => setQuery("Edit site ")}
+                onPress={() => setQuery(selectedMemoryState === 'storefront' ? "Edit storefront " : "Edit site ")}
               >
-                <Text style={styles.suggestionPillText}>Edit site</Text>
+                <Text style={styles.suggestionPillText}>
+                  {selectedMemoryState === 'storefront' ? 'Edit storefront' : 'Edit site'}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>

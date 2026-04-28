@@ -22,10 +22,26 @@ export async function getStoreState(db: Client, scope: string) {
   return { ucode: row.ucode as string, title: row.title as string, payload: parsePayload(row.payload) };
 }
 
-export async function getProducts(db: Client, scope: string, limit = 50): Promise<ProductData[]> {
+export async function getStoreInstances(db: Client, scope: string, limit = 50) {
   const r = await db.execute({
-    sql: `SELECT ucode, title, payload FROM state WHERE type = 'product' AND scope = ? ORDER BY ts DESC LIMIT ?`,
+    sql: `SELECT stateid, qty, value, currency, available FROM instance WHERE scope = ? ORDER BY ts DESC LIMIT ?`,
     args: [scope, limit],
+  });
+  return r.rows.map(row => ({
+    stateid: row.stateid as string,
+    qty: row.qty as number | null,
+    value: row.value as number | null,
+    currency: (row.currency as string) || 'INR',
+    available: Boolean(row.available),
+  }));
+}
+
+export async function getProductsByUcodes(db: Client, ucodes: string[]): Promise<ProductData[]> {
+  if (ucodes.length === 0) return [];
+  const placeholders = ucodes.map(() => '?').join(',');
+  const r = await db.execute({
+    sql: `SELECT ucode, title, payload FROM state WHERE ucode IN (${placeholders}) AND type = 'product'`,
+    args: ucodes,
   });
   return r.rows.map(row => ({
     ucode: row.ucode as string,
@@ -34,10 +50,10 @@ export async function getProducts(db: Client, scope: string, limit = 50): Promis
   }));
 }
 
-export async function getProductByUcode(db: Client, ucode: string, scope: string): Promise<ProductData | null> {
+export async function getProductByUcode(db: Client, ucode: string): Promise<ProductData | null> {
   const r = await db.execute({
-    sql: `SELECT ucode, title, payload FROM state WHERE ucode = ? AND scope = ?`,
-    args: [ucode, scope],
+    sql: `SELECT ucode, title, payload FROM state WHERE ucode = ? AND type = 'product'`,
+    args: [ucode],
   });
   if (r.rows.length === 0) return null;
   const row = r.rows[0];
@@ -167,12 +183,21 @@ export async function getProductsWithInstances(
   scope: string,
   limit = 50
 ): Promise<ProductData[]> {
-  const products = await getProducts(statesDb, scope, limit);
-  const ucodes = products.map(p => p.ucode);
-  const instances = await getInstancesForProducts(instancesDb, ucodes, scope);
+  // Instance-first: get what this store carries, then fetch product definitions
+  const instances = await getStoreInstances(instancesDb, scope, limit);
+  if (instances.length === 0) return [];
+
+  const ucodes = instances.map(i => i.stateid);
+  const products = await getProductsByUcodes(statesDb, ucodes);
+
+  // Build instance lookup
+  const instanceMap: Record<string, InstanceData> = {};
+  for (const i of instances) {
+    instanceMap[i.stateid] = { qty: i.qty, value: i.value, currency: i.currency, available: i.available };
+  }
 
   return products.map(p => ({
     ...p,
-    instance: instances[p.ucode] || { qty: null, value: p.payload?.price || null, currency: 'INR', available: true },
+    instance: instanceMap[p.ucode] || { qty: null, value: p.payload?.price || null, currency: 'INR', available: true },
   }));
 }

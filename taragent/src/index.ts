@@ -134,6 +134,19 @@ export default {
       if (auth instanceof Response) return new Response(auth.body, { status: auth.status, headers: corsHeaders() });
       const ucode = path.split("/api/state/")[1];
       const scope = url.searchParams.get("scope") || "shop:main";
+      const [type] = ucode.split(":");
+      if (type === "product") {
+        // Delete instance for this store; delete state only if no instances remain
+        const idb = getInstancesDbClient(env.INSTANCES_DB_URL, env.INSTANCES_DB_TOKEN);
+        await idb.execute({ sql: "DELETE FROM instance WHERE stateid = ? AND scope = ?", args: [ucode, scope] });
+        const remaining = await idb.execute({ sql: "SELECT COUNT(*) as cnt FROM instance WHERE stateid = ?", args: [ucode] });
+        const cnt = (remaining.rows[0] as any).cnt as number;
+        if (cnt === 0) {
+          const db = getStatesDbClient(env.STATES_DB_URL, env.STATES_DB_TOKEN);
+          await db.execute({ sql: "DELETE FROM state WHERE ucode = ?", args: [ucode] });
+        }
+        return jsonResponse({ success: true, result: { ucode, instanceDeleted: true, stateDeleted: cnt === 0 } });
+      }
       const db = getStatesDbClient(env.STATES_DB_URL, env.STATES_DB_TOKEN);
       await db.execute({ sql: "DELETE FROM state WHERE ucode = ? AND scope = ?", args: [ucode, scope] });
       return jsonResponse({ success: true, result: { ucode, deleted: true } });
@@ -142,10 +155,17 @@ export default {
       const ucode = path.split("/api/state/")[1];
       const scope = url.searchParams.get("scope") || "shop:main";
       const db = getStatesDbClient(env.STATES_DB_URL, env.STATES_DB_TOKEN);
-      const result = await db.execute({
-        sql: "SELECT id, ucode, type, title, payload, scope, userid, public, ts FROM state WHERE ucode = ? AND scope = ?",
-        args: [ucode, scope],
-      });
+      const [type] = ucode.split(":");
+      // Products are universal — no scope filter
+      const result = type === "product"
+        ? await db.execute({
+            sql: "SELECT id, ucode, type, title, payload, scope, userid, public, ts FROM state WHERE ucode = ? AND type = 'product'",
+            args: [ucode],
+          })
+        : await db.execute({
+            sql: "SELECT id, ucode, type, title, payload, scope, userid, public, ts FROM state WHERE ucode = ? AND scope = ?",
+            args: [ucode, scope],
+          });
       if (result.rows.length === 0) return jsonResponse({ error: "Not found" }, 404);
       return jsonResponse({ success: true, result: result.rows[0] });
     }
@@ -278,7 +298,7 @@ export default {
           try {
             const groq = createGroq({ apiKey: env.GROQ_API_KEY });
             const { text: responseText } = await generateText({
-              model: groq("llama-3.3-70b-versatile"),
+              model: groq("openai/gpt-oss-120b"),
               system: `You parse product descriptions into structured JSON for a commerce system.
 Return ONLY valid JSON matching this schema:
 {"title":"string","price":number,"currency":"string","brand":"string","sku":"string","sizes":["S","M"],"colors":["Red","Blue"]}

@@ -30,7 +30,11 @@
       "WebFetch(domain:www.npmjs.com)",
       "Bash(node:*)",
       "Bash(where turso:*)",
-      "Bash(__NEW_LINE_f40a7b1b5b48b861__ curl:*)"
+      "Bash(__NEW_LINE_f40a7b1b5b48b861__ curl:*)",
+      "Bash(echo $products:*)",
+      "Bash(echo === Test 1: List products \\(instance-first\\) ===:*)",
+      "Bash(echo === Test 4: Add Pepsi Cola to shop:amul \\(cross-store instance\\) ===:*)",
+      "Bash(echo === Test 8: Delete pepsi-cola from shop:amul ===:*)"
     ]
   },
   "enabledPlugins": {
